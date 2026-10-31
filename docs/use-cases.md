@@ -4,6 +4,10 @@
 
 This catalog turns [the product specification](product.md) into operations that can be referenced as implementation work, such as **Implement UC-09**. The product specification remains the source of product scope and business rules. This catalog defines observable behavior, without choosing technical architecture.
 
+The [domain and business model](domain-model.md) defines the concepts, invariants, and algorithms behind these operations. Use the [glossary](../GLOSSARY.md) for canonical terminology.
+
+The accepted [architecture](architecture.md) assigns these operations to modules and runtime hosts. The accepted [MVP technology stack](mvp-stack.md) supplies the implementation baseline, with a clean, functional UI first and full visual polish deferred.
+
 Use-case IDs are permanent. Add new IDs when scope grows; do not renumber existing cases. An acceptance criterion such as **UC-09-AC2** belongs to that use case and can be referenced in implementation tasks or later verification.
 
 All learner-facing cases below are in MVP scope. UC-23 and UC-24 describe content-maintainer operations needed to run the product; they do not introduce a product-facing authoring or administration interface.
@@ -57,12 +61,12 @@ These rules apply wherever the corresponding behavior occurs, even when a use ca
 3. **Coding scores:** Every passed test earns 10 points, including hidden tests. Individual runs award no points. Batch results apply to the code version evaluated. Topic percentages use all possible test points, including those belonging to unattempted problems.
 4. **Multiple-choice scores:** Every activity has exactly ten questions with one correct answer each. Correct answers earn 10 points; incorrect and unanswered questions earn zero. A score of at least 60/100 passes.
 5. **Finalization:** A coding topic is complete only after a passing topic submission. A multiple-choice topic requires a passing submission and then "Mark complete." Merely reading a lesson, passing one individual test, or receiving a problem score does not complete a topic.
-6. **Historical achievements:** Retain the highest finalized topic score and all earned completion and unlocks. Retain a coding problem's solved achievement after an all-tests-passed batch result. Show a lower current attempt separately from the best score. A passing multiple-choice score remains eligible for completion even after a later failed retry.
+6. **Historical achievements:** Retain the highest finalized topic percentage, preserving its original earned and possible points. Compare percentages even when possible points change; keep the earlier best on a tie. Retain all earned completion, unlocks, and solved achievements. Show a lower current attempt separately. A passing multiple-choice score remains eligible for completion even after a later failed retry.
 7. **Incomplete work:** Unattempted coding problems and unanswered multiple-choice questions may contribute zero after explicit incomplete-submission confirmation. Attempted coding work needing evaluation cannot be finalized using zero as a substitute for a missing service result.
 8. **Evaluation failures:** Compilation, runtime, and timeout outcomes in learner code are evaluated failures. A service failure is unevaluated: do not award an assumed score, replace a prior recorded score, or finalize an affected submission.
 9. **Visibility:** Hidden tests reveal existence and pass/fail only. Their inputs, expected output, console output, differences, and revealing diagnostics remain hidden in every workflow, including final submission and restored results.
 10. **Persistence:** Preserve code drafts, answer selections, resume location, and confirmed results and progress. Identify unsynced work and conflicting drafts. Later edits never rewrite an already submitted attempt.
-11. **Repeated actions:** Repeated clicks during a pending run, submission, or completion produce one consistent action and outcome. Batch validation has a cooldown of at least five seconds and remains unavailable while its evaluation is running.
+11. **Repeated actions:** Repeated clicks during a pending run, submission, or completion produce one consistent action and outcome. Manual batch validation has a cooldown of at least five seconds per learner/problem pair, shared across tabs and devices, and remains unavailable while that validation is pending. Different problems have independent windows. Automatic submission-required evaluation does not introduce a five-second wait between tests or different problems.
 12. **Contacts:** Contact-email and mobile changes require verification. Keep the old verified contact active until replacement succeeds. Neither contact is an alternative sign-in method; Google remains the sign-in identity.
 
 | Event | Score or achievement recorded | Completion / unlock outcome |
@@ -277,7 +281,7 @@ These rules apply wherever the corresponding behavior occurs, even when a use ca
 2. Record each confirmed result, including hidden-test pass/fail, and calculate earned and maximum points.
 3. Show the current problem score and feedback through UC-10.
 4. If all tests pass, record the solved achievement. Keep any previously earned solved achievement on later failures.
-5. For manual validation, disable Validate for at least five seconds from the request and while evaluation is still running; show remaining status.
+5. For manual validation, share the learner/problem cooldown across tabs and devices. Disable Validate for at least five seconds from the request and while that problem's validation is pending; show remaining status. Another problem has an independent window.
 
 **Alternatives and failures:** Compilation failure gives zero for that validation. A runtime error or timeout fails the affected test; continue other tests where possible. A service failure leaves evaluation incomplete rather than supplying a score. If code changes during evaluation, the result belongs to the evaluated version and cannot represent the new draft as validated.
 
@@ -286,7 +290,7 @@ These rules apply wherever the corresponding behavior occurs, even when a use ca
 **Acceptance criteria**
 
 - **UC-09-AC1:** Passing four of seven tests yields 40/70; each hidden test has the same ten-point weight as a visible one.
-- **UC-09-AC2:** Validate remains disabled for at least five seconds and until the pending validation ends.
+- **UC-09-AC2:** For the same learner/problem pair, Validate remains disabled across tabs and devices for at least five seconds and until the pending validation ends. Another problem has its own cooldown window.
 - **UC-09-AC3:** An all-tests-passed batch adds a solved problem but does not complete the topic before UC-11.
 - **UC-09-AC4:** A service interruption does not fabricate missing test outcomes, replace a prior recorded score with zero, or label changed code validated.
 
@@ -437,6 +441,7 @@ These rules apply wherever the corresponding behavior occurs, even when a use ca
 - **UC-15-AC1:** An 80% best score followed by 40% retains the 80% best score and displays 40% as the current attempt result.
 - **UC-15-AC2:** A later 90% replaces the retained 80% best score without losing history or previously unlocked access.
 - **UC-15-AC3:** A failed coding or multiple-choice retry does not reduce completed-topic or solved-problem achievements.
+- **UC-15-AC4:** If corrected content changes possible points, compare finalized percentages and preserve the original points: 80/100 remains the best after a 90/150 retry. Equal percentages retain the earlier best result.
 
 **Source:** Product → Topic selection, Progress after retry, Learner statistics.
 
