@@ -8,6 +8,8 @@ This document records the module structure and responsibility rules from the acc
 
 Product behavior comes from [product.md](product.md), operations from [use-cases.md](use-cases.md), business decisions from [domain-model.md](domain-model.md), and terminology from [GLOSSARY.md](../GLOSSARY.md). Architecture must preserve those rules rather than redefine them.
 
+The [risk register](risk-register.md) tracks unproven assumptions, required implementation evidence, and the first complete coding-path milestone.
+
 ## 1. Structural decision
 
 Keep the trusted business modules in one application release. Keep code evaluation outside the trusted application host, in a separate execution environment. The evaluator reports execution evidence; the trusted application owns result interpretation, scoring, submission finalization, and earned progress.

@@ -6,6 +6,8 @@
 
 This stack assumes a browser-first MVP maintained by one person. It favors a common application language, one transactional data platform, and focused external adapters. It does not assume a specific number of users, evaluation throughput, cloud provider, or monthly budget.
 
+Use the [risk register](risk-register.md) when sequencing implementation and collecting evidence for the compatibility, recovery, capacity, curriculum, and learner-validation assumptions.
+
 ## Accepted stack
 
 | Concern | Selected technology | Why it fits and what it does not decide |
