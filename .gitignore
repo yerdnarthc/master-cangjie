@@ -1,0 +1,26 @@
+# Local AI-agent instructions and configuration
+AGENTS.md
+AGENTS.override.md
+CLAUDE.md
+GEMINI.md
+.agents/
+.codex/
+.claude/
+.cursor/
+.gemini/
+.opencode/
+.aider*
+.github/copilot-instructions.md
+.github/instructions/
+.github/prompts/
+
+# Local AI-agent notes, session state, and generated scratch artifacts
+.ai/
+.ai-work/
+.ai-artifacts/
+agent-work/
+agent-scratch/
+agent-artifacts/
+ai-work/
+ai-scratch/
+ai-artifacts/
