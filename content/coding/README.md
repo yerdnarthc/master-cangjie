@@ -1,8 +1,9 @@
 # Coding assessment content
 
-Scaffold only. No problem items, solutions, test cases or structural rules have
-been authored. Topic directories follow the coding topics in the
+Topic directories follow the coding topics in the
 [product roadmap](../../docs/product.md#mvp-scope).
+The first topic contains the completed, runtime-verified and approved
+[Hello, World! problem](running-the-first-cangjie-program/hello-world/problem.md).
 
 ## Organization
 
@@ -40,16 +41,16 @@ requirements remain owned by the product specification.
 
 ## File responsibilities
 
-| File | Intended content when drafting begins |
+| File | Purpose |
 | --- | --- |
 | `problem.md` | Learner-facing title, objective, instructions, constraints, input/output format, sample explanations and optional structural requirements. |
 | `assessment.md` | Maintainer-facing identity/revision, test inventory and visibility, coverage rationale, scoring weight, structural-rule specification and verification evidence. |
-| `starter.cj` | Initial learner source, to be authored later. |
-| `reference.cj` | Reference solution, to be authored and verified later. |
-| `tests/` | Exact input/output files, conventionally `case-01.in` and `case-01.out`, once actual tests are designed. |
+| `starter.cj` | Initial learner source. |
+| `reference.cj` | Reference solution, verified before publication. |
+| `tests/` | Exact input/output files, conventionally `case-01.in` and `case-01.out`. |
 
-The empty `.cj` files are placeholders, not runnable programs. There are no sample
-or actual test files yet. An eventual empty-input test must have an explicit empty
+The template's empty `.cj` files are placeholders, not runnable programs.
+An empty-input test must have an explicit empty
 `.in` file; a missing file does not mean empty input.
 
 Test files will be authoritative for exact input/output bytes, including final
@@ -65,3 +66,11 @@ the [product rules](../../docs/product.md) and
 Reference solutions, maintainer notes and hidden-test data are not learner-facing
 content. Future publication/import code must explicitly select permitted fields;
 this directory does not define an import schema or implement publication.
+
+## Verification
+
+The maintained [content checker](../../tools/evaluator/README.md#verify-coding-content)
+automates compilation and exact-output comparison for a problem with runnable
+starter and reference programs. Run it on the existing Linux evaluator host.
+Record the printed report reference in the problem's assessment specification;
+content review and publication approval remain separate from execution evidence.
