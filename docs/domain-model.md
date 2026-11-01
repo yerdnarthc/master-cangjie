@@ -249,6 +249,19 @@ These are specifications of decisions and calculations, not executable code or a
 
 ### ALG-02: Evaluate coding work and compute a problem score
 
+**Approved structural-gate amendment:** A coding problem's assessment revision may
+define zero or more published structural requirements. For a complete batch, any
+confirmed violation overrides test-derived earned points with zero; possible points
+remain ten times the test count. With no requirements, or all requirements satisfied,
+normal per-test scoring applies. All-tests-passed alone cannot award solved status
+when a structural requirement is violated. Analyzer/platform failure leaves the
+required evaluation unevaluated and cannot fabricate zero or finalized progress.
+Structural evidence must match the source snapshot and assessment revision under
+ALG-01; edits or score-affecting rule corrections invalidate its reuse for new work.
+These amendments qualify the scoring and solved-achievement steps below and INV-05,
+INV-08 and the related acceptance examples. Historical earned achievements remain
+protected by the existing retry/content-correction rules.
+
 **Owner:** Coding problem and evaluation attempt. **Operations:** UC-08–UC-11.
 
 1. Fix the code snapshot, language version, assessment reference, and selected test scope when evaluation is requested.

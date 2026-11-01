@@ -157,3 +157,9 @@ _Avoid_: Passing score, category completion
 **Resume location**:
 The topic and activity location where a learner can continue their work.
 _Avoid_: Score, completion status
+
+**Structural requirement**:
+A published, optional-per-problem condition on the learner's code structure. A
+confirmed violation gates that problem's batch score to zero regardless of passing
+behavioral tests. Detailed scoring and evidence rules belong to the product and
+domain documents; analyzer failure is not a confirmed violation.

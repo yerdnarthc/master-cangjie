@@ -81,6 +81,12 @@ Local development may run the web application and PostgreSQL locally. On Windows
 
 ## Implementation and launch checks
 
+The approved optional structural-requirement gate additionally needs a defined
+requirement vocabulary and reliable Cangjie 1.0.5 analysis adapter. No analyzer or
+parsing dependency is selected yet. Do not treat substring matching as implemented
+structural verification. The trusted application retains scoring authority; the
+adapter supplies source/revision-associated compliance evidence.
+
 1. Use the accepted stack as the implementation baseline and pin compatible versions. Record any necessary technology changes explicitly without silently replacing the accepted Option A shape.
 2. Confirm the deployment region, pilot budget, and expected simultaneous evaluations.
 3. Obtain the exact Cangjie LTS 1.0.5 artifact for the worker architecture and check its build/runtime dependencies.
