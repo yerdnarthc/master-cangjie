@@ -39,10 +39,10 @@ describe.skipIf(process.env.MCJ_REAL_SANDBOX !== 'true')('real sandbox adapter',
     expect((await run('main(): Int64 { return 7 }')).outcome).toBe('runtime-failure');
   });
   it('stops an executing program at its deadline', async () => {
-    expect((await run('main(): Int64 { while (true) {} return 0 }')).outcome).toBe('timeout');
+    expect((await run('main(): Int64 {\n    while (true) {}\n    return 0\n}')).outcome).toBe('timeout');
   });
   it('bounds noisy execution and confirms cleanup', async () => {
-    const r = await run('main(): Int64 { while (true) { println("abcdefghijklmnopqrstuvwxyz0123456789") } return 0 }');
+    const r = await run('main(): Int64 {\n    while (true) { println("abcdefghijklmnopqrstuvwxyz0123456789") }\n    return 0\n}');
     expect(r.outcome).toBe('output-limit');
     expect(Buffer.from(r.stdoutBase64, 'base64').length).toBeLessThanOrEqual(1024 * 1024);
   });
