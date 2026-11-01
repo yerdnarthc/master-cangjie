@@ -8,6 +8,8 @@ The [Program Structure topic](program-structure/README.md) contains three comple
 reviewed, verified and approved coding problems.
 The [Expressions topic](expressions/README.md) contains six completed, verified and
 approved problems with 36 test cases.
+The [introductory Functions topic](functions/README.md) contains three completed, verified
+and approved problems with 12 test cases.
 
 ## Problem-writing guidance
 
