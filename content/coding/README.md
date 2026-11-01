@@ -4,6 +4,8 @@ Topic directories follow the coding topics in the
 [product roadmap](../../docs/product.md#mvp-scope).
 The first topic contains the completed, runtime-verified and approved
 [Hello, World! problem](running-the-first-cangjie-program/hello-world/problem.md).
+The [Program Structure topic](program-structure/README.md) contains three completed,
+reviewed, verified and approved coding problems.
 
 ## Organization
 
