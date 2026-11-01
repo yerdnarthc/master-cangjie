@@ -1,3 +1,5 @@
+.vscode/
+
 # Local AI-agent instructions and configuration
 AGENTS.md
 AGENTS.override.md
