@@ -1,0 +1,6 @@
+*.py text eol=lf
+*.c text eol=lf
+*.cj text eol=lf
+*.in text eol=lf
+*.md text eol=lf
+Dockerfile text eol=lf

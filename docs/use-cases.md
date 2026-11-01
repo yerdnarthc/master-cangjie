@@ -14,6 +14,30 @@ All learner-facing cases below are in MVP scope. UC-23 and UC-24 describe conten
 
 ## Actors
 
+### Shared structural-requirement amendment
+
+The approved optional gate in the product specification applies to UC-06 through
+UC-11, UC-15, UC-18, UC-23 and UC-24. Requirements are visible in the problem
+instructions, fixed in the assessment revision and evaluated against the same code
+snapshot as the behavioral evidence. Individual runs still award no points.
+
+Acceptance additions:
+
+- A problem without structural requirements retains normal per-test scoring.
+- All tests passing with a confirmed structural violation yields zero problem points
+  and no new solved achievement; the topic denominator is unchanged.
+- When all requirements pass, normal per-test scoring applies, including partial scores.
+- An analyzer service failure leaves required work unevaluated and submission
+  unfinalized, preserving earlier scores and progress.
+- Feedback identifies unmet published requirements without revealing hidden-test data.
+- Content preparation records requirements; score-affecting corrections use UC-24
+  and do not revoke historical scores, solved achievements or unlocks.
+
+These additions qualify earlier unconditional test-score/solved examples; structural
+requirements are optional per problem rather than mandatory across a topic.
+
+### Actor definitions
+
 | Actor | Role |
 | --- | --- |
 | Visitor | Registers or signs in using Google. |

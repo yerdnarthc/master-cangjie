@@ -32,6 +32,26 @@ MasterCangjie - Cangjie Programming Language Interactive Coding Platform & Train
 
 ## Business Rules
 
+### Optional structural requirements — approved MVP addition
+
+Coding problems may have zero or more explicitly published structural requirements,
+such as a required function definition or required/prohibited control-flow constructs.
+If any configured requirement is confirmed violated, that problem's batch score is
+zero even when every behavioral test passes. Without structural requirements, the
+existing behavior-based scoring applies. When all configured requirements are met,
+each passing test earns ten points as usual. Structural requirements award no extra
+points and do not change the problem's maximum points or topic denominator.
+This gate takes precedence over unconditional per-test scoring statements below.
+The supported requirement types and their precise semantics still need definition;
+no structural analyzer has been selected or implemented by this decision.
+
+An analyzer/platform failure is unevaluated work, not a confirmed violation or a
+zero-point result. Requirements belong to the published assessment revision and
+the result must refer to the evaluated source snapshot. A problem is solved only
+when every test passes and every configured structural requirement is satisfied.
+
+### Existing assessment rules
+
 | Area                                      | Requirement                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Account access                            | Google is the only registration and sign-in method in the MVP. Password-based, Facebook, GitHub, and other sign-in methods and account linking are deferred. Signing out does not delete saved learner work or progress.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |

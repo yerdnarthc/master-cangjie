@@ -1,0 +1,13 @@
+import std.fs.*
+
+main(): Int64 {
+    try {
+        let data = File.readFrom("__HOST_CANARY_PATH__")
+        println("UNEXPECTED-host-file-readable: ${data.size}")
+    } catch (e: FSException) {
+        println("host-canary-inaccessible")
+        println(e)
+        return 0
+    }
+    return 1
+}

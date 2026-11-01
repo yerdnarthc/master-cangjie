@@ -177,6 +177,25 @@ Block outbound network access, restrict filesystem access to the disposable task
 7. Ingestion records the canonical evaluation result and a durable continuation intent. If the application stops before completing the topic, the continuation resumes through the same UC orchestration.
 8. Stop automatic retries after the configured operational limit, leave the submission visibly unfinalized, and provide an explicit recovery action. Do not convert exhausted operational retries into a learner score of zero.
 
+### Hello World stalled-operation policy
+
+Pending evaluation recovery uses a two-minute waiting budget from its latest
+explicit retry (initial request time for the first attempt). Status/workspace reads
+and trusted continuation reconcile stalled work, including when the dispatcher is
+offline. Trusted status/workspace reads also ingest available durable evidence and
+continue the requesting learner's ready submissions, so a stopped continuation
+host cannot leave already-finished work pending forever. A live execution lease or durable unconsumed outcome takes precedence over
+age: neither is discarded to unlock the UI. Expired exhausted deliveries are also
+recoverable failures. Recovery locks the evaluation and exchange record, fences
+older claims, and leaves work unevaluated with an explicit retry action. Retry
+retains the operation and fixed work, renews its waiting budget, and resumes
+confirmed submissions depending on that evaluation. This local milestone policy
+is an operating limit, not a learner score or a guarantee of service availability.
+
+Browser message dismissal retains durable request identity and status polling.
+Unknown request outcomes must be recovered under the same identity. Unresolved
+submissions remain accessible independently of newer practice results.
+
 ### UC-11 responsibility sequence
 
 ```mermaid
@@ -237,6 +256,12 @@ Define interfaces where business behavior needs an external effect or cross-modu
 - Keep internal operational records access-controlled and avoid logging full source, hidden data, contact proofs, tokens, or credentials as routine diagnostics. Correlate operations using their durable references.
 
 ## 10. Testing strategy
+
+The maintained evaluator feasibility harness lives in [tools/evaluator](../tools/evaluator/README.md).
+It contains the reusable RISK-01 probes and fixtures, independently of personal
+agent tooling. Generated reports, job leases, SDK/build contexts and local machine
+configuration stay outside version control. This is prototype verification tooling,
+not an implementation of the production worker or the application integration tests.
 
 The module interface is the test surface. Use the UC acceptance criteria and domain scenarios as observable outcomes, rather than assertions about private helper call order.
 
