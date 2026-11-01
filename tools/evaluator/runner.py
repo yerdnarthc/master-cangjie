@@ -1,5 +1,6 @@
 """Local Linux-only feasibility probe. Trusted operator input; not a public evaluator."""
 import argparse
+import base64
 from settings import RUNTIME
 import json
 import os
@@ -29,7 +30,7 @@ def phase(name, command, seconds):
     total = 0
     reason = 'exited'
     p = subprocess.Popen(['docker', 'exec', name, '/bin/bash', '-c', command],
-                         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                         stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
         with selectors.DefaultSelector() as sel:
             for stream, label in ((p.stdout, 'stdout'), (p.stderr, 'stderr')):
@@ -63,6 +64,7 @@ def phase(name, command, seconds):
     return {'reason': reason, 'exit_code': p.returncode,
             'duration_seconds': round(time.monotonic() - started, 3),
             'captured_bytes': total,
+            'stdout_base64': base64.b64encode(buffers['stdout']).decode('ascii'),
             **{key: value.decode(errors='replace') for key, value in buffers.items()}}
 
 
@@ -73,6 +75,8 @@ def interrupted(signum, frame):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('source', type=Path)
+    parser.add_argument('--stdin', type=Path, help='Read-only test input file (maximum 256 KiB).')
+    parser.add_argument('--record-compiler-version', action='store_true')
     parser.add_argument('--compile-probe', choices=('deadline', 'output', 'interrupt'),
                         help='Trusted local enforcement probe; substitutes for cjc, never compiler evidence.')
     parser.add_argument('--probe-id', type=uuid.UUID,
@@ -83,6 +87,11 @@ def main():
     source = args.source.resolve(strict=True)
     if not source.is_file() or source.stat().st_size > 256 * 1024:
         parser.error('Provide a source file no larger than 256 KiB.')
+    test_input = args.stdin.resolve(strict=True) if args.stdin else None
+    if test_input and (not test_input.is_file() or test_input.stat().st_size > 256 * 1024):
+        parser.error('Provide an input file no larger than 256 KiB.')
+    input_mount = (['--mount', f'type=bind,src={test_input},dst=/input/stdin,readonly']
+                   if test_input else [])
     if os.geteuid() != 0:
         parser.error('Run with sudo python3 runner.py SOURCE.')
     name = 'mcj-probe-' + (args.probe_id or uuid.uuid4()).hex
@@ -93,6 +102,7 @@ def main():
     cleanup_ok = False
     job_lease = lease(name.removeprefix('mcj-probe-'))
     report['compiler_mode'] = args.compile_probe or 'cangjie'
+    report['stdin_file'] = str(test_input) if test_input else None
     def handle_interrupt(signum, frame):
         report['interruption_signal'] = signal.Signals(signum).name
         interrupted(signum, frame)
@@ -112,7 +122,7 @@ def main():
                 '--tmpfs', '/tmp:rw,nosuid,nodev,size=256m,mode=1777',
                 '--tmpfs', '/work:rw,exec,nosuid,nodev,size=256m,uid=10001,gid=10001,mode=0700',
                 '--mount', f'type=bind,src={source},dst=/input/main.cj,readonly',
-                IMAGE, '/bin/sleep', 'infinity')
+                *input_mount, IMAGE, '/bin/sleep', 'infinity')
         control('start', name)
         report['configuration'] = json.loads(control('inspect', name))[0]['HostConfig']
         report['guest_limits'] = phase(name, 'ulimit -Su; ulimit -Hu', 5)
@@ -127,6 +137,9 @@ def main():
                 raise RuntimeError('Credential exposure probe failed: ' + stage)
         if args.credential_canary:
             credential_check('credentials_before_compile')
+        if args.record_compiler_version:
+            report['compiler_version'] = phase(name,
+                'source /opt/cangjie/envsetup.sh; cjc --version', 5)
         compile_command = ('set -e; source /opt/cangjie/envsetup.sh; '
             'cp /input/main.cj /work/main.cj; cd /work; exec cjc main.cj -o program')
         if args.compile_probe == 'deadline':
@@ -148,7 +161,8 @@ def main():
                 credential_check('credentials_before_execute')
             report['active_phase'] = 'execute'
             result = phase(name,
-                'source /opt/cangjie/envsetup.sh; cd /work; exec ./program', 5)
+                'source /opt/cangjie/envsetup.sh; cd /work; exec ./program < ' +
+                ('/input/stdin' if test_input else '/dev/null'), 5)
             report['execute'] = result
             report['outcome'] = ('execute_' + result['reason']
                 if result['reason'] != 'exited' else

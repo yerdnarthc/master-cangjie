@@ -67,6 +67,36 @@ validated platforms or permission to substitute ordinary `runc`.
 
 ## Files and local state
 
+### Verify coding content
+
+From a Linux checkout on the existing evaluator host, run one command from the
+repository root:
+
+```bash
+sudo python3 tools/evaluator/content-check.py content/coding/running-the-first-cangjie-program/hello-world
+```
+
+The command snapshots both `starter.cj` and `reference.cj` plus every paired
+`tests/*.in` and `tests/*.out`, then compiles and runs each source/case combination
+in a fresh sandbox using `runner.py`. It checks the compiler identifies as 1.0.5,
+successful execution, exact stdout bytes and sandbox cleanup. Empty input needs
+an actual zero-byte `.in` file. A mismatch, missing pair or execution/service
+failure exits nonzero; success exits zero. The printed JSON report records hashes,
+image/version evidence and exact runner report references. Snapshots and reports
+stay in ignored `results/`.
+
+This command assumes both starter and reference are runnable programs expected to
+pass every case, as in Hello World. It does not interpret Markdown, publish content,
+assign scores, check structural rules or approve learner-facing wording. Future
+items with intentionally incomplete starters need a separately defined verification
+expectation before using this command unchanged. Runs compile separately per case;
+this simple authoring workflow is not a production batch evaluator.
+
+`runner.py --stdin FILE` supplies a read-only input mount only during execution;
+without it, programs receive EOF from `/dev/null`. `--record-compiler-version`
+adds version evidence. Reports preserve stdout as base64 alongside display text
+so byte comparison does not depend on UTF-8 replacement decoding.
+
 - `runner.py`: bounded compiler/execution orchestration and named controlled probes.
 - `*-check.py`: integration checks, including Cangjie compatibility, resources,
   network/files, cooperative interruption, sequential storage and orphan/canary checks.
