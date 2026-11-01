@@ -53,7 +53,8 @@ export default function CodingWorkspace() {
       const w = await request<Workspace>('/api/workspace');
       const local = await browserDrafts.read(w.learnerId, w.problem.problemId).catch(() => undefined);
       let unfinished = await browserDrafts.pending(w.learnerId, w.problem.problemId).catch(() => undefined);
-      let initialOp = w.latestSubmission?.state === 'pending' ? w.latestSubmission : w.latestEvaluation ?? w.latestSubmission;
+      const unresolved = w.unresolvedSubmission ?? (w.latestSubmission?.state !== 'confirmed' ? w.latestSubmission : undefined);
+      let initialOp = unresolved ?? w.latestEvaluation ?? w.latestSubmission;
       if (unfinished?.operationId) {
         try {
           const fetched = await request<OperationView>(`/api/operations/${encodeURIComponent(unfinished.operationId)}`);
@@ -61,7 +62,7 @@ export default function CodingWorkspace() {
             await browserDrafts.forgetRequest(w.learnerId, w.problem.problemId).catch(storageError);
             unfinished = undefined;
           }
-          initialOp = fetched;
+          initialOp = unresolved ?? fetched;
         } catch (err) {
           if (err instanceof RequestError && (err.status === 404 || err.status === 410)) {
             await browserDrafts.forgetRequest(w.learnerId, w.problem.problemId).catch(storageError);
@@ -132,7 +133,7 @@ export default function CodingWorkspace() {
   const refreshProgress = useCallback(async () => {
     const fresh = await request<Workspace>('/api/workspace');
     if (actor.current !== fresh.learnerId) return;
-    setWorkspace(previous => previous ? { ...previous, progress: fresh.progress } : previous);
+    setWorkspace(previous => previous ? { ...previous, progress: fresh.progress, unresolvedSubmission: fresh.unresolvedSubmission } : previous);
   }, []);
   const acceptOperation = useCallback(async (result: OperationView) => {
     const w = current.current;
@@ -144,7 +145,7 @@ export default function CodingWorkspace() {
     }
   }, [refreshProgress, storageError]);
 
-  const pollId = pending?.operationId ?? (operation?.state === 'pending' ? operation.operationId : undefined);
+  const pollId = operation?.state === 'pending' ? operation.operationId : pending?.operationId;
   useEffect(() => {
     if (!pollId || !workspace || !online) return;
     let cancelled = false;
@@ -175,7 +176,17 @@ export default function CodingWorkspace() {
   }, [pollId, workspace?.learnerId, online, acceptOperation]);
 
   async function sendRemembered(record: PendingRequest) {
-    const result = await request<OperationView>(record.url, record.body);
+    let result: OperationView;
+    try { result = await request<OperationView>(record.url, record.body); }
+    catch (error) {
+      // Only a definitive rejection of this remembered request can discard it.
+      // Save/conflict errors and uncertain transport/server failures cannot.
+      if (error instanceof RequestError && error.status < 500 && ![401, 403].includes(error.status)) {
+        await browserDrafts.forgetRequest(record.learnerId, record.problemId).catch(storageError);
+        setPending(undefined);
+      }
+      throw error;
+    }
     if (actor.current !== record.learnerId) return;
     const linked = { ...record, operationId: result.operationId };
     await browserDrafts.rememberRequest(linked);
@@ -187,13 +198,17 @@ export default function CodingWorkspace() {
     try { await work(); }
     catch (e) {
       setError(e instanceof Error ? e.message : 'The request could not be confirmed.');
-      if (e instanceof RequestError) {
-        if (e.retryAfter) setCooldownUntil(Date.now() + e.retryAfter);
-        const w = current.current;
-        if (w) await browserDrafts.forgetRequest(w.learnerId, w.problem.problemId).catch(storageError);
-        setPending(undefined);
-      }
+      if (e instanceof RequestError && e.retryAfter) setCooldownUntil(Date.now() + e.retryAfter);
     } finally { acting.current = false; setBusy(false); }
+  }
+  async function retryOperation(target: OperationView) {
+    await act(async () => {
+      const w = current.current!;
+      const record: PendingRequest = { key: browserDrafts.key(w.learnerId, w.problem.problemId), learnerId: w.learnerId,
+        problemId: w.problem.problemId, url: `/api/operations/${target.operationId}/retry`, body: {} };
+      await browserDrafts.rememberRequest(record); setPending(record); setOperation(target);
+      await sendRemembered(record);
+    });
   }
   async function evaluate(kind: 'single' | 'batch') {
     await act(async () => {
@@ -245,7 +260,7 @@ export default function CodingWorkspace() {
     <button disabled={busy} onClick={() => void act(async () => { await request('/api/session', {}); await load(); })}>Open development workspace</button>
     {error && <p role="alert">{error}</p>}</main>;
   if (!workspace) return <main className="entry-panel"><h1>MasterCangjie</h1><p role="status">{error || 'Opening your workspace…'}</p>{error && <button onClick={() => void load()}>Try again</button>}</main>;
-  const waiting = operation?.state === 'pending';
+  const waiting = operation?.state === 'pending' || !!pending;
   const remaining = Math.max(0, Math.ceil((cooldownUntil - now) / 1000));
   const old = operation?.type === 'evaluation' && (!operation.currentForDraft || dirty.current);
   return <div className="workspace-shell">
@@ -271,17 +286,13 @@ export default function CodingWorkspace() {
           }} />
             <div className="save-row"><p role="status" aria-atomic="true">{saveStatus}</p><button disabled={busy || !!conflict} onClick={() => void act(async () => { await save(); })}>Save code</button></div>
             {!online && <p className="notice">You are offline. Your edits stay on this device until saved on the server.</p>}
-            {waiting && <p className="notice" role="status" aria-live="polite">⏳ Evaluation in progress… compiling and running your Cangjie code.</p>}
+            {waiting && <p className="notice" role="status" aria-live="polite">{operation?.message ?? 'Waiting for the evaluation service. Your work is preserved.'}</p>}
             <div className="actions"><button disabled={busy || waiting || !!conflict || !online} onClick={() => void evaluate('single')}>Run test</button>
               <button disabled={busy || waiting || !!conflict || !online || remaining > 0} onClick={() => void evaluate('batch')}>{remaining > 0 ? `Validate (${remaining}s)` : 'Validate'}</button>
               <button className="primary" disabled={busy || waiting || !!conflict || !online} onClick={() => void reviewSubmission()}>Review submission</button></div>
           </div>
           {error && <div className="panel error" role="alert"><p>{error}</p><button type="button" onClick={() => {
             setError('');
-            const w = current.current;
-            if (w) void browserDrafts.forgetRequest(w.learnerId, w.problem.problemId).catch(storageError);
-            setPending(undefined);
-            if (operation?.state === 'pending') setOperation(undefined);
           }}>Dismiss</button></div>}
           {conflict && <section className="panel" aria-label="Draft conflict"><h2>Choose which code to keep</h2><p>Another version was saved. Both versions are preserved until you choose.</p>
             <h3>Saved on server</h3><pre>{conflict.server.source}</pre><h3>Your competing code</h3><pre>{conflict.candidate.source}</pre>
@@ -291,6 +302,12 @@ export default function CodingWorkspace() {
             {review.unattempted && <label className="acknowledgement"><input type="checkbox" checked={acknowledged} onChange={e => setAcknowledged(e.target.checked)} />I understand this unattempted problem earns zero points.</label>}
             <div className="actions"><button disabled={busy || (review.unattempted && !acknowledged)} onClick={() => void confirmSubmission()}>Confirm submission</button><button disabled={busy} onClick={() => setReview(undefined)}>Cancel</button></div></section>}
           {pending && !pending.operationId && <section className="panel"><p>The request has not been confirmed. Recover it using the same request identity.</p><button disabled={busy || !online} onClick={() => void act(() => sendRemembered(pending))}>Recover request</button></section>}
+          {workspace.unresolvedSubmission && workspace.unresolvedSubmission.operationId !== operation?.operationId && <section className="panel" aria-label="Unfinished submission">
+            <h2>Unfinished topic submission</h2><p>Your confirmed submission still needs recovery. Its original code and prior progress are preserved.</p>
+            <button disabled={busy || !online || waiting} onClick={() => {
+              setOperation(workspace.unresolvedSubmission);
+            }}>Open unfinished submission</button>
+          </section>}
           {operation && <section className="panel results" aria-label="Evaluation results" aria-busy={operation.state === 'pending'}>
             <h2>{operation.type === 'submission' ? 'Topic submission' : operation.kind === 'batch' ? 'Batch validation' : 'Individual test run'}</h2>
             <p role="status" aria-atomic="true">{operation.state === 'pending' ? 'Evaluation in progress. You can return to this result after reopening the page.' : operation.state === 'retryable-error' ? 'Evaluation could not be completed. Your prior progress is preserved.' : 'Result confirmed.'}</p>
@@ -304,7 +321,7 @@ export default function CodingWorkspace() {
               {result.actual !== undefined && <><h4>Actual output</h4><pre>{result.actual}</pre></>}
               {result.diagnostics && <><h4>Diagnostics</h4><pre>{result.diagnostics}</pre></>}
             </article>)}
-            {operation.state === 'retryable-error' && <button disabled={busy || !online} onClick={() => void act(async () => { await acceptOperation(await request<OperationView>(`/api/operations/${operation.operationId}/retry`, {})); })}>Retry evaluation</button>}
+            {operation.state === 'retryable-error' && <button disabled={busy || !online} onClick={() => void retryOperation(operation)}>{operation.type === 'submission' ? 'Retry submission' : 'Retry evaluation'}</button>}
           </section>}
           {workspace.progress.nextTopicAvailable && <aside className="panel next-topic"><h2>Next: Identifiers</h2><p>Unlocked. Its multiple-choice activity is not available in this local milestone yet.</p></aside>}
         </section>

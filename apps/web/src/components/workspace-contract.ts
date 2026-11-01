@@ -11,7 +11,7 @@ export type Workspace = {
     languageVersion: string; tests: { id: string; visibility: 'visible' | 'hidden'; input?: string; expected?: string }[] };
   draft: { source: string; workRevision: number; attempted: boolean };
   progress: { bestScore: Score | null; completed: boolean; nextTopicAvailable: boolean };
-  latestEvaluation?: OperationView; latestSubmission?: OperationView;
+  latestEvaluation?: OperationView; latestSubmission?: OperationView; unresolvedSubmission?: OperationView;
 };
 export type SaveResult = { kind: 'saved'; workRevision: number } | {
   kind: 'conflict'; conflictId: string; server: { source: string; workRevision: number };

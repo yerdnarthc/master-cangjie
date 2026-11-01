@@ -4,6 +4,7 @@ import { seed } from '../../infrastructure/persistence/seed-milestone.ts';
 
 export async function resetMilestone(): Promise<void> {
   const url = requireEnv('MIGRATION_DATABASE_URL');
+  if (!new URL(url).pathname.endsWith('_test')) throw new Error('Journey reset requires a dedicated *_test database.');
   const { pool } = connect(url);
   try {
     await transaction(pool, async (client) => {

@@ -11,9 +11,11 @@ import { passes } from '../domain/evaluation.ts';
 import type { EvaluationRequest, FixedContext, Result, OperationView, Feedback } from '../application/operations.ts';
 import type { ExecutionOutcome } from '../../../infrastructure/evaluation-transport/contracts.ts';
 
+export class InvalidExecutionEvidence extends Error {}
+
 export const hash = (value:string) => createHash('sha256').update(value).digest('hex');
 const keyValid = (key:string) => { if(typeof key!=='string'||!key.length||key.length>100)throw new OperationError(400,'A request identity is required.'); };
-const lockActor=async(c:pg.PoolClient,a:Actor)=>{ if(!(await c.query('SELECT id FROM learner_accounts WHERE id=$1 FOR UPDATE',[a.learnerId])).rowCount)throw new OperationError(401,'Unknown learner.'); };
+const lockActor=async(c:pg.PoolClient,a:Actor)=>{ if(!(await c.query('SELECT id FROM learner_accounts WHERE id=$1 FOR NO KEY UPDATE',[a.learnerId])).rowCount)throw new OperationError(401,'Unknown learner.'); };
 
 export class PostgresSubmissions {
   constructor(readonly pool:pg.Pool){}
@@ -23,14 +25,40 @@ export class PostgresSubmissions {
   async resolve(actor:Actor,request:{conflictId:string;choice:'server'|'candidate';baseRevision:number}) {
     return transaction(this.pool,async c=>resolveDraftIn(c,actor,await assessmentFor(c),request));
   }
+  // Reads reconcile durable work even when the continuation host is unavailable.
+  async recoverStalled(actor:Actor) {
+    await transaction(this.pool,async c=>{
+      await lockActor(c,actor);
+      const pending=(await c.query("SELECT *,COALESCE(retry_requested_at,created_at)<=now()-interval '2 minutes' AS stale FROM evaluation_attempts WHERE learner_id=$1 AND state='pending' ORDER BY id FOR UPDATE",[actor.learnerId])).rows;
+      for(const e of pending) {
+        const job=(await c.query('SELECT *,lease_until>now() AS live FROM evaluation_exchange.jobs WHERE id=$1 FOR UPDATE',[e.id])).rows[0];
+        if(job?.outcome || job?.live || (!e.stale && !(job?.deliveries>=3)))continue;
+        if(job)await c.query('UPDATE evaluation_exchange.jobs SET acknowledged=true,generation=generation+1,lease_until=NULL WHERE id=$1',[e.id]);
+        await c.query("UPDATE evaluation_attempts SET state='retryable-error' WHERE id=$1",[e.id]);
+        await c.query('UPDATE validation_windows SET pending_batch=NULL WHERE pending_batch=$1',[e.id]);
+        await c.query("UPDATE topic_submissions SET state='retryable-error' WHERE evaluation_id=$1 AND state='pending'",[e.id]);
+      }
+    });
+  }
+  private async recoverAvailable(actor:Actor) {
+    await this.recoverStalled(actor);
+    const rows=(await this.pool.query('SELECT j.id,j.generation,j.outcome FROM evaluation_exchange.jobs j JOIN evaluation_attempts e ON e.id=j.id WHERE e.learner_id=$1 AND j.outcome IS NOT NULL AND j.acknowledged=false LIMIT 20',[actor.learnerId])).rows;
+    for(const row of rows) {
+      try {await this.ingest(row.id,row.outcome,row.generation);}
+      catch(error){if(!(error instanceof InvalidExecutionEvidence))throw error;await this.rejectEvidence(row.id,row.outcome,row.generation);}
+    }
+    await this.continueSubmissions(actor);
+  }
   async workspace(actor:Actor) {
+    await this.recoverAvailable(actor);
     const content=await assessmentFor(this.pool),draft=await readDraft(this.pool,actor,content);
     const p=(await this.pool.query('SELECT * FROM learner_topic_progress WHERE learner_id=$1 AND topic_id=$2',[actor.learnerId,HELLO_TOPIC])).rows[0];
     const next=(await this.pool.query("SELECT available FROM learner_topic_progress WHERE learner_id=$1 AND topic_id='identifiers'",[actor.learnerId])).rows[0];
     const evaluation=(await this.pool.query('SELECT id FROM evaluation_attempts WHERE learner_id=$1 AND context->>\'problemId\'=$2 ORDER BY created_at DESC LIMIT 1',[actor.learnerId,content.problemId])).rows[0];
     const submission=(await this.pool.query('SELECT id FROM topic_submissions WHERE learner_id=$1 ORDER BY created_at DESC LIMIT 1',[actor.learnerId])).rows[0];
+    const unresolved=(await this.pool.query("SELECT id FROM topic_submissions WHERE learner_id=$1 AND state<>'finalized' ORDER BY created_at DESC LIMIT 1",[actor.learnerId])).rows[0];
     return {learnerId:actor.learnerId,problem:publicProblem(content),draft,progress:{bestScore:p.best_score,completed:p.completed,nextTopicAvailable:!!next?.available},
-      latestEvaluation:evaluation?await this.read(actor,evaluation.id):undefined,latestSubmission:submission?await this.read(actor,submission.id):undefined};
+      unresolvedSubmission:unresolved?await this.read(actor,unresolved.id):undefined,latestEvaluation:evaluation?await this.read(actor,evaluation.id):undefined,latestSubmission:submission?await this.read(actor,submission.id):undefined};
   }
   private async createEvaluation(c:pg.PoolClient,actor:Actor,key:string,kind:'single'|'batch',context:FixedContext,manual:boolean) {
     const intent=hash(JSON.stringify({kind,context}));
@@ -113,7 +141,7 @@ export class PostgresSubmissions {
     if(s.evaluation_id) {
       const evaluation=(await c.query('SELECT * FROM evaluation_attempts WHERE id=$1',[s.evaluation_id])).rows[0];
       if(evaluation.state!=='confirmed'){
-        if(evaluation.state==='retryable-error')await c.query("UPDATE topic_submissions SET state='retryable-error' WHERE id=$1",[id]);
+        await c.query('UPDATE topic_submissions SET state=$2 WHERE id=$1',[id,evaluation.state==='retryable-error'?'retryable-error':'pending']);
         return;
       }
       score=evaluation.result.score;
@@ -127,6 +155,7 @@ export class PostgresSubmissions {
     await c.query("UPDATE topic_submissions SET state='finalized',score=$2 WHERE id=$1",[id,score]);
   }
   async read(actor:Actor,id:string):Promise<OperationView> {
+    await this.recoverAvailable(actor);
     let row=(await this.pool.query('SELECT * FROM evaluation_attempts WHERE id=$1 AND learner_id=$2',[id,actor.learnerId])).rows[0];
     const type=row?'evaluation':'submission';
     row??=(await this.pool.query('SELECT * FROM topic_submissions WHERE id=$1 AND learner_id=$2',[id,actor.learnerId])).rows[0];
@@ -135,9 +164,11 @@ export class PostgresSubmissions {
     const a=await assessmentFor(this.pool,context.assessment.topicId,context.assessment.revision);
     const draft=await readDraft(this.pool,actor,a);
     const result=(row.result??{feedback:[]}) as Result;
+    const job=row.state==='pending'?(await this.pool.query('SELECT lease_until>now() AS live,outcome IS NOT NULL AS finished FROM evaluation_exchange.jobs WHERE id=$1',[type==='evaluation'?row.id:row.evaluation_id])).rows[0]:undefined;
+    const pendingMessage=job?.finished?'Execution finished. Recording the result.':job?.live?'Evaluation is running.':'Evaluation is queued. If execution cannot start, recovery becomes available after two minutes.';
     const feedback=result.feedback.map(f=>a.tests.find(t=>t.id===f.caseId)?.visibility==='hidden'?{caseId:f.caseId,status:f.status}:f);
     return {operationId:row.id,type,kind:type==='evaluation'?row.kind:undefined,state:row.state==='finalized'?'confirmed':row.state,currentForDraft:draft.source===context.source&&draft.workRevision===context.workRevision,
-      score:type==='submission'?row.score??undefined:result.score,feedback,message:row.state==='retryable-error'?'Evaluation service interrupted. Your work and earlier progress are preserved. Retry this operation.':undefined};
+      score:type==='submission'?row.score??undefined:result.score,feedback,message:row.state==='retryable-error'?'Evaluation service interrupted. Your work and earlier progress are preserved. Retry this operation.':row.state==='pending'?pendingMessage:undefined};
   }
   async retry(actor:Actor,id:string) {
     await transaction(this.pool,async c=>{
@@ -145,7 +176,23 @@ export class PostgresSubmissions {
       let e=(await c.query('SELECT * FROM evaluation_attempts WHERE id=$1 AND learner_id=$2 FOR UPDATE',[id,actor.learnerId])).rows[0];
       if(!e){const s=(await c.query('SELECT * FROM topic_submissions WHERE id=$1 AND learner_id=$2 FOR UPDATE',[id,actor.learnerId])).rows[0];if(!s)throw new OperationError(404,'Operation not found.');if(s.state!=='retryable-error')return;e=(await c.query('SELECT * FROM evaluation_attempts WHERE id=$1 FOR UPDATE',[s.evaluation_id])).rows[0];await c.query("UPDATE topic_submissions SET state='pending' WHERE id=$1",[id]);}
       if(e.state!=='retryable-error')return;
-      await c.query("UPDATE evaluation_attempts SET state='pending',result=NULL WHERE id=$1",[e.id]);
+      const job=(await c.query('SELECT *,lease_until>now() AS live FROM evaluation_exchange.jobs WHERE id=$1 FOR UPDATE',[e.id])).rows[0];
+      if(job?.live && !job.outcome)throw new OperationError(409,'Evaluation is still running. Reconnect to its result.');
+      // A response may have failed after evidence persisted; never throw away unconsumed evidence.
+      if(job?.outcome && !job.acknowledged)return;
+      if(e.kind==='batch') {
+        const window=(await c.query('SELECT pending_batch FROM validation_windows WHERE learner_id=$1 AND problem_id=$2 FOR UPDATE',[actor.learnerId,e.context.problemId])).rows[0];
+        if(window?.pending_batch && window.pending_batch!==e.id) {
+          const other=(await c.query('SELECT state FROM evaluation_attempts WHERE id=$1',[window.pending_batch])).rows[0];
+          if(other?.state==='pending')throw new OperationError(409,'A validation is already pending for this problem.');
+        }
+        await c.query('UPDATE validation_windows SET pending_batch=$3 WHERE learner_id=$1 AND problem_id=$2',[actor.learnerId,e.context.problemId,e.id]);
+      } else {
+        const other=await c.query("SELECT id FROM evaluation_attempts WHERE learner_id=$1 AND context->>'problemId'=$2 AND kind='single' AND state='pending' AND id<>$3",[actor.learnerId,e.context.problemId,e.id]);
+        if(other.rowCount)throw new OperationError(409,'A run is already pending.');
+      }
+      await c.query("UPDATE evaluation_attempts SET state='pending',result=NULL,retry_requested_at=now() WHERE id=$1",[e.id]);
+      await c.query("UPDATE topic_submissions SET state='pending' WHERE evaluation_id=$1 AND state='retryable-error'",[e.id]);
       await c.query("UPDATE evaluation_exchange.jobs SET deliveries=0,outcome=NULL,acknowledged=false,lease_until=NULL,retry_after=now() WHERE id=$1 AND (lease_until IS NULL OR lease_until<=now() OR outcome IS NOT NULL)",[e.id]);
       await c.query('UPDATE evaluation_dispatch SET notified_at=NULL WHERE evaluation_id=$1',[e.id]);
     });return this.read(actor,id);
@@ -153,15 +200,17 @@ export class PostgresSubmissions {
   async ingest(id:string,outcome:ExecutionOutcome,generation:number) {
     return transaction(this.pool,async c=>{
       const e=(await c.query('SELECT * FROM evaluation_attempts WHERE id=$1 FOR UPDATE',[id])).rows[0];if(!e||e.state==='confirmed')return;
-      const exchange=(await c.query('SELECT generation,outcome FROM evaluation_exchange.jobs WHERE id=$1 FOR UPDATE',[id])).rows[0];
-      if(!exchange||exchange.generation!==generation||outcome.generation!==generation||outcome.requestId!==id||outcome.sourceHash!==hash(e.context.source)||JSON.stringify(outcome.assessment)!==JSON.stringify(e.context.assessment)||outcome.contractVersion!==1)throw new Error('Execution evidence association mismatch.');
+      const exchange=(await c.query('SELECT generation,outcome,acknowledged,outcome=$2::jsonb AS same_evidence FROM evaluation_exchange.jobs WHERE id=$1 FOR UPDATE',[id,JSON.stringify(outcome)])).rows[0];
+      if(!exchange||exchange.generation!==generation||exchange.acknowledged||!exchange.same_evidence)return;
+      if(!outcome||!Array.isArray(outcome.cases)||outcome.cases.some(x=>!x||typeof x.stdoutBase64!=='string'||typeof x.diagnostics!=='string'||typeof x.compilerVersion!=='string'||typeof x.caseId!=='string'||typeof x.cleanupConfirmed!=='boolean'||!['completed','compile-failure','runtime-failure','timeout','output-limit','operational-error','interrupted'].includes(x.outcome)))throw new InvalidExecutionEvidence('Malformed execution evidence.');
+      if(!exchange||exchange.generation!==generation||outcome.generation!==generation||outcome.requestId!==id||outcome.sourceHash!==hash(e.context.source)||(outcome.assessment?.topicId!==e.context.assessment.topicId||outcome.assessment?.revision!==e.context.assessment.revision)||outcome.contractVersion!==1)throw new InvalidExecutionEvidence('Execution evidence association mismatch.');
       const a=await assessmentFor(c,e.context.assessment.topicId,e.context.assessment.revision);
-      if(outcome.cases.length!==e.context.caseIds.length||new Set(outcome.cases.map(x=>x.caseId)).size!==outcome.cases.length||outcome.cases.some(x=>!e.context.caseIds.includes(x.caseId)))throw new Error('Execution scope mismatch.');
+      if(outcome.cases.length!==e.context.caseIds.length||new Set(outcome.cases.map(x=>x.caseId)).size!==outcome.cases.length||outcome.cases.some(x=>!e.context.caseIds.includes(x.caseId)))throw new InvalidExecutionEvidence('Execution scope mismatch.');
       if(outcome.cases.some(x=>!x.cleanupConfirmed||['operational-error','interrupted'].includes(x.outcome))) {
         await c.query("UPDATE evaluation_attempts SET state='retryable-error' WHERE id=$1",[id]);
       } else {
         const feedback:Feedback[]=outcome.cases.map(x=>{
-          if(!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(x.stdoutBase64)||x.stdoutBase64.length>1400000||x.diagnostics.length>1048576||!x.compilerVersion.includes('1.0.5'))throw new Error('Invalid bounded execution evidence.');
+          if(!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(x.stdoutBase64)||x.stdoutBase64.length>1400000||x.diagnostics.length>1048576||!x.compilerVersion.includes('1.0.5'))throw new InvalidExecutionEvidence('Invalid bounded execution evidence.');
           const expected=a.tests.find(t=>t.id===x.caseId)!;
           const actual=Buffer.from(x.stdoutBase64,'base64'),wanted=Buffer.from(expected.expectedBase64,'base64');
           const isFormat=!sameBytes(actual,wanted)&&actual.toString('utf8').replace(/\r\n/g,'\n').split('\n').map(l=>l.trimEnd()).join('\n').trimEnd()===wanted.toString('utf8').replace(/\r\n/g,'\n').split('\n').map(l=>l.trimEnd()).join('\n').trimEnd(); const status=x.outcome==='completed'?(sameBytes(actual,wanted)?'pass':isFormat?'format-mismatch':'fail'):x.outcome==='compile-failure'?'compile-error':x.outcome;
@@ -169,7 +218,7 @@ export class PostgresSubmissions {
         });
         const compile=outcome.cases.some(x=>x.outcome==='compile-failure');
         const decision=evaluate(e.kind,e.context.caseIds,compile?{kind:'compile-failure'}:{kind:'executed',cases:feedback.map(f=>({caseId:f.caseId,outcome:f.status==='pass'?'pass':f.status==='timeout'?'timeout':f.status==='output-limit'?'output-limit':'fail'}))});
-        if(decision.kind!=='confirmed')throw new Error('Incomplete outcome cannot be confirmed.');
+        if(decision.kind!=='confirmed')throw new InvalidExecutionEvidence('Incomplete outcome cannot be confirmed.');
         const result:Result={...decision,feedback};
         await c.query("UPDATE evaluation_attempts SET state='confirmed',result=$2 WHERE id=$1",[id,result]);
         if(decision.solved)await c.query('INSERT INTO solved_achievements VALUES($1,$2,$3) ON CONFLICT DO NOTHING',[e.learner_id,e.context.problemId,id]);
@@ -178,8 +227,18 @@ export class PostgresSubmissions {
       await c.query('UPDATE validation_windows SET pending_batch=NULL WHERE pending_batch=$1',[id]);
     });
   }
-  async continueSubmissions() {
-    const rows=(await this.pool.query("SELECT id,learner_id FROM topic_submissions WHERE state='pending' ORDER BY created_at LIMIT 20")).rows;
+  async rejectEvidence(id:string,outcome:ExecutionOutcome,generation:number) {
+    await transaction(this.pool,async c=>{
+      const e=(await c.query('SELECT state FROM evaluation_attempts WHERE id=$1 FOR UPDATE',[id])).rows[0];
+      const j=(await c.query('SELECT *,outcome=$2::jsonb AS same_evidence FROM evaluation_exchange.jobs WHERE id=$1 FOR UPDATE',[id,JSON.stringify(outcome)])).rows[0];
+      if(!e||e.state==='confirmed'||!j||j.generation!==generation||j.acknowledged||!j.same_evidence)return;
+      await c.query("UPDATE evaluation_attempts SET state='retryable-error' WHERE id=$1",[id]);
+      await c.query('UPDATE evaluation_exchange.jobs SET acknowledged=true WHERE id=$1',[id]);
+      await c.query('UPDATE validation_windows SET pending_batch=NULL WHERE pending_batch=$1',[id]);
+    });
+  }
+  async continueSubmissions(actor?:Actor) {
+    const rows=(await this.pool.query("SELECT s.id,s.learner_id FROM topic_submissions s LEFT JOIN evaluation_attempts e ON e.id=s.evaluation_id WHERE ($1::uuid IS NULL OR s.learner_id=$1) AND (s.state='pending' OR (s.state='retryable-error' AND e.state IN ('pending','confirmed'))) ORDER BY s.created_at LIMIT 20",[actor?.learnerId??null])).rows;
     for(const row of rows)await transaction(this.pool,async c=>{await lockActor(c,{learnerId:row.learner_id});await this.finalizeIn(c,row.id);});
   }
 }

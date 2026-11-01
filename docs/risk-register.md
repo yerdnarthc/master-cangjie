@@ -17,7 +17,7 @@ The ranking reflects the initial judgment about delivery impact and how early ev
 | ID | Risk | Main consequence | Current status |
 | --- | --- | --- | --- |
 | RISK-01 | Evaluator compatibility and containment remain unproven | Core coding workflow blocked or unsafe to release | In progress |
-| RISK-02 | Interrupted or repeated evaluations produce inconsistent results | Wrong scores, lost unlocks, duplicate outcomes, or permanently pending submissions | Open |
+| RISK-02 | Interrupted or repeated evaluations produce inconsistent results | Wrong scores, lost unlocks, duplicate outcomes, or permanently pending submissions | In progress |
 | RISK-03 | MVP effort is underestimated | Schedule overruns and a broad but incomplete implementation | Open |
 | RISK-04 | Curriculum preparation and correctness become bottlenecks | A working platform delivers weak or incorrect learning activities | Open |
 | RISK-05 | Cooldowns are mistaken for capacity and cost control | Overloaded workers, excessive queues, or uncontrolled provider usage | Open |
@@ -319,6 +319,18 @@ Use real persistence, pinned assessment content, and an actual evaluator for thi
 
 **Milestone exit evidence:** A reproducible working path, recorded runtime versions and configuration, confirmed permission/resource restrictions, and recovery checks covering the failures above. A screenshot, mocked evaluator, or completed documentation alone does not meet this milestone.
 
+**2026-11-01 independent implementation verification:** The
+[review of commit c5ea8d6](development/hello-world-verification.md) passed the
+production build, static checks, 46 domain tests, 13 real PostgreSQL integration
+tests, all six browser journeys against the real isolated evaluator, and seven
+direct sandbox-adapter checks. This reduces uncertainty about the working coding
+path for RISK-01/RISK-02. Unclaimed operations can still remain pending without an
+actionable recovery state; failed submissions can be hidden and remain unfinalized
+after their evaluation is retried; Dismiss can discard browser tracking while the
+server operation remains pending. These reproduced gaps and the unexecuted full
+restart/interruption matrix keep recovery acceptance incomplete. No risk is closed
+by this verification.
+
 This milestone primarily reduces RISK-01 and RISK-02 while providing effort and workload evidence for RISK-03 and RISK-05. It is an early implementation checkpoint, not completion of the full MVP.
 
 ## Maintaining this register
@@ -330,3 +342,22 @@ This milestone primarily reduces RISK-01 and RISK-02 while providing effort and 
 - Do not use risk reduction as an implicit authorization to change product scope, remove acceptance criteria, provision infrastructure, or incur provider costs.
 
 No application checks described here have been run as part of creating this register. It is the persistent reference for what must be demonstrated during implementation and validation.
+
+
+### 2026-11-01 Hello World recovery milestone evidence
+
+The [recovery implementation follow-up](development/hello-world-verification.md#recovery-implementation-follow-up-2026-11-01)
+resolves the independent audit findings. The complete Hello World coding-path
+recovery milestone is verified: 46 domain tests, 28 real PostgreSQL tests, all six
+real Linux sandbox tests, all fourteen browser tests, and the actual
+SIGKILL/restart matrix passed. The matrix covers compile/execute interruption,
+orphan cleanup, generation fencing, durable outcomes before queue acknowledgement,
+ingestion before continuation, and transaction boundaries around dispatch intent
+and atomic progress finalization. Lease/stale expiry inputs were explicitly
+accelerated in the test database; real process deaths and execution were not mocked.
+
+This provides demonstrated RISK-01/RISK-02 recovery evidence and completes the
+first coding-path milestone. RISK-02 is now In progress rather than Open; neither
+risk is closed for the complete MVP. Remaining capacity/retention, backup/restore,
+provider and curriculum acceptance still require their own evidence. The startup
+runbook and guarded isolated test commands support reproducing these checks.

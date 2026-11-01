@@ -1,5 +1,5 @@
-import { assertScore, passes } from "./evaluation";
-import type { Score } from "./evaluation";
+import { assertScore, passes } from "./evaluation.ts";
+import type { Score } from "./evaluation.ts";
 
 /** Compare exact fractions, keeping retained evidence when percentages tie. */
 export function betterScore(candidate: Score, retained: Score): boolean {

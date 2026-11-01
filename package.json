@@ -20,7 +20,9 @@
     "db:seed:milestone": "tsx infrastructure/persistence/seed-milestone.ts",
     "dev:jobs": "tsx apps/application-jobs/src/main.ts",
     "dev:worker": "tsx apps/evaluation-worker/src/main.ts",
-    "db:roles": "tsx infrastructure/persistence/setup-roles.ts"
+    "db:roles": "tsx infrastructure/persistence/setup-roles.ts",
+    "test:host": "node tools/development/test-host.mjs",
+    "test:recovery:process": "node --experimental-transform-types tools/development/verify-coding-recovery.ts"
   },
   "dependencies": {
     "@monaco-editor/react": "4.7.0",
