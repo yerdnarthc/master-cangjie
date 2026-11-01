@@ -246,6 +246,7 @@ export default function CodingWorkspace() {
           }} />
             <div className="save-row"><p role="status" aria-atomic="true">{saveStatus}</p><button disabled={busy || !!conflict} onClick={() => void act(async () => { await save(); })}>Save code</button></div>
             {!online && <p className="notice">You are offline. Your edits stay on this device until saved on the server.</p>}
+            {waiting && <p className="notice" role="status" aria-live="polite">⏳ Evaluation in progress… compiling and running your Cangjie code.</p>}
             <div className="actions"><button disabled={busy || waiting || !!conflict || !online} onClick={() => void evaluate('single')}>Run test</button>
               <button disabled={busy || waiting || !!conflict || !online || remaining > 0} onClick={() => void evaluate('batch')}>{remaining > 0 ? `Validate (${remaining}s)` : 'Validate'}</button>
               <button className="primary" disabled={busy || waiting || !!conflict || !online} onClick={() => void reviewSubmission()}>Review submission</button></div>

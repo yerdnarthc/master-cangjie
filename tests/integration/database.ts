@@ -12,7 +12,9 @@ export async function testDatabase() {
   if(!/^[a-z0-9_]+$/.test(db))throw new Error('Invalid test database name.');
   try { if(!(await admin.query('SELECT FROM pg_database WHERE datname=$1',[db])).rowCount)await admin.query(`CREATE DATABASE "${db}"`); } finally {await admin.end();}
   await migrate(testUrl); await setupRoles(testUrl); await seed(testUrl);
-  return connect(testUrl).pool;
+  const p = connect(testUrl).pool;
+  await p.query('TRUNCATE TABLE evaluation_exchange.jobs, evaluation_dispatch, solved_achievements, topic_submissions, validation_windows, evaluation_attempts, submission_reviews, draft_conflicts, coding_drafts CASCADE;');
+  return p;
 }
 export async function fixture(pool:ReturnType<typeof connect>['pool']) {
   const learnerId=randomUUID();

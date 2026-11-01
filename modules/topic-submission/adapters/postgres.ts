@@ -164,7 +164,7 @@ export class PostgresSubmissions {
           if(!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(x.stdoutBase64)||x.stdoutBase64.length>1400000||x.diagnostics.length>1048576||!x.compilerVersion.includes('1.0.5'))throw new Error('Invalid bounded execution evidence.');
           const expected=a.tests.find(t=>t.id===x.caseId)!;
           const actual=Buffer.from(x.stdoutBase64,'base64'),wanted=Buffer.from(expected.expectedBase64,'base64');
-          const status=x.outcome==='completed'?(sameBytes(actual,wanted)?'pass':'fail'):x.outcome==='compile-failure'?'compile-error':x.outcome;
+          const isFormat=!sameBytes(actual,wanted)&&actual.toString('utf8').replace(/\r\n/g,'\n').split('\n').map(l=>l.trimEnd()).join('\n').trimEnd()===wanted.toString('utf8').replace(/\r\n/g,'\n').split('\n').map(l=>l.trimEnd()).join('\n').trimEnd(); const status=x.outcome==='completed'?(sameBytes(actual,wanted)?'pass':isFormat?'format-mismatch':'fail'):x.outcome==='compile-failure'?'compile-error':x.outcome;
           return {caseId:x.caseId,status,actual:actual.toString('utf8'),expected:wanted.toString('utf8'),diagnostics:x.diagnostics};
         });
         const compile=outcome.cases.some(x=>x.outcome==='compile-failure');
