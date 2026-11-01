@@ -238,6 +238,12 @@ Define interfaces where business behavior needs an external effect or cross-modu
 
 ## 10. Testing strategy
 
+The maintained evaluator feasibility harness lives in [tools/evaluator](../tools/evaluator/README.md).
+It contains the reusable RISK-01 probes and fixtures, independently of personal
+agent tooling. Generated reports, job leases, SDK/build contexts and local machine
+configuration stay outside version control. This is prototype verification tooling,
+not an implementation of the production worker or the application integration tests.
+
 The module interface is the test surface. Use the UC acceptance criteria and domain scenarios as observable outcomes, rather than assertions about private helper call order.
 
 | Test scope | Required examples | Real dependencies |
