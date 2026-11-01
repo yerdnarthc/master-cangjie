@@ -51,5 +51,10 @@ export function uuid(value:string):string {if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f
 
 export async function response(action:()=>Promise<unknown>) {
   try {return NextResponse.json(await action(),{headers:{'Cache-Control':'no-store'}});}
-  catch(error){if(error instanceof OperationError)return NextResponse.json({error:error.message,...(error.status===429?{retryAfter:5000}:{})},{status:error.status});console.error('Application operation failed; no private work was logged.');return NextResponse.json({error:'The service could not finish this action. Your saved work is preserved.'},{status:503});}
+  catch(error){
+    const op = (error instanceof OperationError || (error && typeof error === 'object' && 'status' in error && typeof (error as {status: unknown}).status === 'number')) ? error as OperationError : undefined;
+    if(op)return NextResponse.json({error:op.message,...(op.status===429?{retryAfter:5000}:{})},{status:op.status});
+    console.error('Application operation failed:', error);
+    return NextResponse.json({error:'The service could not finish this action. Your saved work is preserved.'},{status:503});
+  }
 }

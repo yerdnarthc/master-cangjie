@@ -52,7 +52,23 @@ export default function CodingWorkspace() {
     try {
       const w = await request<Workspace>('/api/workspace');
       const local = await browserDrafts.read(w.learnerId, w.problem.problemId).catch(() => undefined);
-      const unfinished = await browserDrafts.pending(w.learnerId, w.problem.problemId).catch(() => undefined);
+      let unfinished = await browserDrafts.pending(w.learnerId, w.problem.problemId).catch(() => undefined);
+      let initialOp = w.latestSubmission?.state === 'pending' ? w.latestSubmission : w.latestEvaluation ?? w.latestSubmission;
+      if (unfinished?.operationId) {
+        try {
+          const fetched = await request<OperationView>(`/api/operations/${encodeURIComponent(unfinished.operationId)}`);
+          if (fetched.state !== 'pending') {
+            await browserDrafts.forgetRequest(w.learnerId, w.problem.problemId).catch(storageError);
+            unfinished = undefined;
+          }
+          initialOp = fetched;
+        } catch (err) {
+          if (err instanceof RequestError && (err.status === 404 || err.status === 410)) {
+            await browserDrafts.forgetRequest(w.learnerId, w.problem.problemId).catch(storageError);
+            unfinished = undefined;
+          }
+        }
+      }
       actor.current = w.learnerId; current.current = w;
       sourceRef.current = local?.dirty ? local.source : w.draft.source;
       revision.current = local?.dirty ? local.baseRevision : w.draft.workRevision;
@@ -60,7 +76,7 @@ export default function CodingWorkspace() {
       setWorkspace(w); setSource(sourceRef.current); setUnauthorized(false);
       setSaveStatus(dirty.current ? 'Unsynced local changes' : 'Saved on server');
       setPending(unfinished);
-      setOperation(w.latestSubmission?.state === 'pending' ? w.latestSubmission : w.latestEvaluation ?? w.latestSubmission);
+      setOperation(initialOp);
     } catch (e) {
       if (e instanceof RequestError && e.status === 401) setUnauthorized(true);
       else setError(e instanceof Error ? e.message : 'Unable to open your work.');
@@ -140,7 +156,18 @@ export default function CodingWorkspace() {
         await acceptOperation(result);
         if (result.state === 'pending') timer = setTimeout(poll, 1000);
       } catch (e) {
-        if (!cancelled) { setError(e instanceof Error ? e.message : 'Reconnecting to your result…'); timer = setTimeout(poll, 2500); }
+        if (!cancelled) {
+          if (e instanceof RequestError && (e.status === 404 || e.status === 410)) {
+            const w = current.current;
+            if (w) await browserDrafts.forgetRequest(w.learnerId, w.problem.problemId).catch(storageError);
+            setPending(undefined);
+            setOperation(undefined);
+            setError('');
+            return;
+          }
+          setError(e instanceof Error ? e.message : 'Reconnecting to your result…');
+          timer = setTimeout(poll, 2500);
+        }
       }
     };
     void poll();
@@ -162,11 +189,9 @@ export default function CodingWorkspace() {
       setError(e instanceof Error ? e.message : 'The request could not be confirmed.');
       if (e instanceof RequestError) {
         if (e.retryAfter) setCooldownUntil(Date.now() + e.retryAfter);
-        if (e.status >= 400 && e.status < 500) {
-          const w = current.current;
-          if (w) await browserDrafts.forgetRequest(w.learnerId, w.problem.problemId).catch(storageError);
-          setPending(undefined);
-        }
+        const w = current.current;
+        if (w) await browserDrafts.forgetRequest(w.learnerId, w.problem.problemId).catch(storageError);
+        setPending(undefined);
       }
     } finally { acting.current = false; setBusy(false); }
   }
@@ -220,7 +245,7 @@ export default function CodingWorkspace() {
     <button disabled={busy} onClick={() => void act(async () => { await request('/api/session', {}); await load(); })}>Open development workspace</button>
     {error && <p role="alert">{error}</p>}</main>;
   if (!workspace) return <main className="entry-panel"><h1>MasterCangjie</h1><p role="status">{error || 'Opening your workspace…'}</p>{error && <button onClick={() => void load()}>Try again</button>}</main>;
-  const waiting = operation?.state === 'pending' || !!pending;
+  const waiting = operation?.state === 'pending';
   const remaining = Math.max(0, Math.ceil((cooldownUntil - now) / 1000));
   const old = operation?.type === 'evaluation' && (!operation.currentForDraft || dirty.current);
   return <div className="workspace-shell">
@@ -251,7 +276,13 @@ export default function CodingWorkspace() {
               <button disabled={busy || waiting || !!conflict || !online || remaining > 0} onClick={() => void evaluate('batch')}>{remaining > 0 ? `Validate (${remaining}s)` : 'Validate'}</button>
               <button className="primary" disabled={busy || waiting || !!conflict || !online} onClick={() => void reviewSubmission()}>Review submission</button></div>
           </div>
-          {error && <div className="panel error" role="alert">{error}</div>}
+          {error && <div className="panel error" role="alert"><p>{error}</p><button type="button" onClick={() => {
+            setError('');
+            const w = current.current;
+            if (w) void browserDrafts.forgetRequest(w.learnerId, w.problem.problemId).catch(storageError);
+            setPending(undefined);
+            if (operation?.state === 'pending') setOperation(undefined);
+          }}>Dismiss</button></div>}
           {conflict && <section className="panel" aria-label="Draft conflict"><h2>Choose which code to keep</h2><p>Another version was saved. Both versions are preserved until you choose.</p>
             <h3>Saved on server</h3><pre>{conflict.server.source}</pre><h3>Your competing code</h3><pre>{conflict.candidate.source}</pre>
             <div className="actions"><button disabled={busy} onClick={() => void resolve('server')}>Keep server version</button><button disabled={busy} onClick={() => void resolve('candidate')}>Keep my version</button></div></section>}
