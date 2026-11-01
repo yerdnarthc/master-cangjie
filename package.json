@@ -1,0 +1,51 @@
+{
+  "name": "master-cangjie",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0 <25"
+  },
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev --workspace @mcj/web",
+    "build": "npm run build --workspace @mcj/web",
+    "check": "tsc --noEmit && node tools/development/check-boundaries.mjs",
+    "test:domain": "vitest run --project domain",
+    "test:integration": "vitest run --project integration",
+    "test:journeys": "playwright test",
+    "db:migrate": "tsx infrastructure/persistence/migrate.ts",
+    "db:seed:milestone": "tsx infrastructure/persistence/seed-milestone.ts",
+    "dev:jobs": "tsx apps/application-jobs/src/main.ts",
+    "dev:worker": "tsx apps/evaluation-worker/src/main.ts",
+    "db:roles": "tsx infrastructure/persistence/setup-roles.ts"
+  },
+  "dependencies": {
+    "@monaco-editor/react": "4.7.0",
+    "dexie": "4.4.7",
+    "drizzle-orm": "0.45.4",
+    "monaco-editor": "0.56.0",
+    "pg": "8.23.1",
+    "pg-boss": "12.38.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "react-markdown": "10.1.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "@tailwindcss/postcss": "4.3.3",
+    "@types/node": "26.6.6",
+    "@types/pg": "8.23.1",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.2.3",
+    "tailwindcss": "4.3.3",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vitest": "5.0.5"
+  },
+  "overrides": {
+    "dompurify": "3.4.17"
+  }
+}

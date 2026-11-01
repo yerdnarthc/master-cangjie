@@ -1,5 +1,17 @@
 .vscode/
 
+# Application dependencies, builds, credentials and generated verification output
+node_modules/
+.next/
+.env
+.env.*
+!.env.example
+test-results/
+playwright-report/
+coverage/
+*.tsbuildinfo
+.worktrees/
+
 # Local AI-agent instructions and configuration
 AGENTS.md
 AGENTS.override.md
