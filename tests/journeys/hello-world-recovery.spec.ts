@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-const topic = '/topics/running-the-first-cangjie-program';
+const topic = '/topics/running-the-first-cangjie-program/activity';
 const evaluation = { operationId:'11111111-1111-4111-8111-111111111111',type:'evaluation',kind:'batch',state:'confirmed',currentForDraft:true,score:{earned:10,possible:10},feedback:[] };
 const submission = { operationId:'22222222-2222-4222-8222-222222222222',type:'submission',state:'retryable-error',currentForDraft:true,feedback:[] };
 const workspace = { learnerId:'browser-recovery-fixture',problem:{title:'Hello, World!',statement:'Recovery fixture',starter:'main() {}',topicId:'running-the-first-cangjie-program',problemId:'hello-world',revision:1,languageVersion:'1.0.5',tests:[{id:'case-01',visibility:'visible',input:'',expected:'Hello, World!\n'}]},draft:{source:'main() {}',workRevision:1,attempted:true},progress:{bestScore:null,completed:false,nextTopicAvailable:false} };
@@ -15,8 +15,10 @@ test('restores an unresolved submission independently of newer confirmed results
     if(path.endsWith('/retry')) { retries.push(path); resumed = true; return route.fulfill({json:{...submission,state:'pending'}}); }
     return route.fulfill({json:{...submission,state:'confirmed',score:{earned:10,possible:10}}});
   });
+  await page.setViewportSize({width:320,height:812});
   await page.goto(topic);
   await expect(page.getByRole('heading',{name:'Topic submission',exact:true})).toBeVisible();
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
   await page.getByRole('button',{name:'Retry submission',exact:true}).click();
   await expect(page.getByRole('region',{name:'Evaluation results'})).toContainText('Result confirmed.');
   expect(retries).toEqual([`/api/operations/${submission.operationId}/retry`]);

@@ -256,7 +256,7 @@ export default function CodingWorkspace() {
   }
 
   if (unauthorized) return <main className="entry-panel"><p className="eyebrow">MasterCangjie · Local milestone</p><h1>Your first Cangjie program</h1>
-    <p>Open the development learner workspace to practice running and submitting Hello World.</p>
+    <p>Open the development learner workspace to practice running and submitting Hello World.</p><p><a href="/topics/running-the-first-cangjie-program">Back to lesson</a></p>
     <button disabled={busy} onClick={() => void act(async () => { await request('/api/session', {}); await load(); })}>Open development workspace</button>
     {error && <p role="alert">{error}</p>}</main>;
   if (!workspace) return <main className="entry-panel"><h1>MasterCangjie</h1><p role="status">{error || 'Opening your workspace…'}</p>{error && <button onClick={() => void load()}>Try again</button>}</main>;
@@ -264,7 +264,7 @@ export default function CodingWorkspace() {
   const remaining = Math.max(0, Math.ceil((cooldownUntil - now) / 1000));
   const old = operation?.type === 'evaluation' && (!operation.currentForDraft || dirty.current);
   return <div className="workspace-shell">
-    <header className="topbar"><a href="/">MasterCangjie</a><span className="muted">Coding workspace</span><button onClick={() => void act(async () => {
+    <header className="topbar"><a href="/">MasterCangjie</a><a href="/topics/running-the-first-cangjie-program">Back to lesson</a><span className="muted">Coding workspace</span><button onClick={() => void act(async () => {
       await request('/api/session/logout', {}); actor.current = ''; current.current = undefined;
       setWorkspace(undefined); setSource(''); sourceRef.current = ''; setOperation(undefined); setPending(undefined); setReview(undefined); setUnauthorized(true);
     })}>Sign out</button></header>

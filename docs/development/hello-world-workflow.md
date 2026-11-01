@@ -137,3 +137,12 @@ bindings may be missing. The recovery verification used the matching Linux
 through `NODE_PATH`, to execute the six existing real-sandbox tests without
 changing the repository dependency lock. A fresh Linux `npm ci` is the normal
 repeatable setup.
+
+
+## Onboarding lesson entry (2026-11-02)
+
+`/topics/running-the-first-cangjie-program` now opens its lesson handout.
+Select **Open Hello World activity** to reach the unchanged assessment workflow
+at `/topics/running-the-first-cangjie-program/activity`. The activity provides a
+**Back to lesson** link. Saved work and operation APIs keep their existing keys;
+lesson navigation does not create assessment attempts or progress.

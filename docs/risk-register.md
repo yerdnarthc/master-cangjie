@@ -361,3 +361,16 @@ first coding-path milestone. RISK-02 is now In progress rather than Open; neithe
 risk is closed for the complete MVP. Remaining capacity/retention, backup/restore,
 provider and curriculum acceptance still require their own evidence. The startup
 runbook and guarded isolated test commands support reproducing these checks.
+
+
+### 2026-11-02 onboarding lesson handouts
+
+Three source-linked handouts now cover Getting Started with Cangjie, Installing
+the Cangjie Toolchain, and Running the First Cangjie Program. Shared topic pages
+present lessons and summaries before their activity section; the existing Hello
+World workspace is linked at `/topics/running-the-first-cangjie-program/activity`.
+The first two quizzes are explicitly unavailable. These are public lesson previews
+in the internal build, not evidence of earned topic access or complete UC-05
+onboarding/progression/resume behavior. RISK-04 remains open: quiz authoring,
+maintainer content approval and learner validation still require evidence.
+See `content/lessons/README.md` for source/version scope and content ownership.
