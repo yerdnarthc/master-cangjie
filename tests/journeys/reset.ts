@@ -1,0 +1,29 @@
+import { connect, transaction } from '../../infrastructure/persistence/connection.ts';
+import { requireEnv } from '../../infrastructure/runtime/config.ts';
+import { seed } from '../../infrastructure/persistence/seed-milestone.ts';
+
+export async function resetMilestone(): Promise<void> {
+  const url = requireEnv('MIGRATION_DATABASE_URL');
+  const { pool } = connect(url);
+  try {
+    await transaction(pool, async (client) => {
+      await client.query(`
+        TRUNCATE TABLE
+          evaluation_exchange.jobs,
+          evaluation_dispatch,
+          solved_achievements,
+          topic_submissions,
+          validation_windows,
+          evaluation_attempts,
+          submission_reviews,
+          draft_conflicts,
+          coding_drafts,
+          learner_topic_progress
+        CASCADE;
+      `);
+    });
+    await seed(url);
+  } finally {
+    await pool.end();
+  }
+}
