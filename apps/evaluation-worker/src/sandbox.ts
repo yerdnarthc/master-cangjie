@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { closeSync, constants, openSync } from 'node:fs';
-import { chmod, mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, rm, stat, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { isAbsolute, join } from 'node:path';
 
@@ -97,6 +97,9 @@ export async function reconcileSandboxes(leaseDirectory: string): Promise<{ remo
         if ((await docker(['ps', '-aq', '--filter', `id=${id}`])).trim()) throw error;
       }
       if ((await docker(['ps', '-aq', '--filter', `id=${id}`])).trim()) throw new Error('Orphan cleanup not confirmed.');
+      // The UUID was validated above; never derive a host deletion target from
+      // an unvalidated container path or mount representation.
+      await rm(join(leaseDirectory, job + '.source'), { recursive: true, force: true });
       result.removed.push(id);
     } finally { closeSync(fd); }
   }
@@ -125,8 +128,8 @@ export async function runSandbox(input: SandboxInput, signal?: AbortSignal): Pro
     if (signal?.aborted) { evidence.outcome = 'interrupted'; return evidence; }
     await reconcileSandboxes(input.leaseDirectory);
     evidence.imageId = (await docker(['image', 'inspect', input.image, '--format', '{{.Id}}'])).trim();
-    folder = await mkdtemp(join(input.leaseDirectory, 'source-'));
-    await chmod(folder, 0o700);
+    folder = join(input.leaseDirectory, job + '.source');
+    await mkdir(folder, { mode: 0o700 });
     await writeFile(join(folder, 'main.cj'), source, { mode: 0o644 });
     await writeFile(join(folder, 'stdin'), stdin, { mode: 0o644 });
     containerMayExist = true;
