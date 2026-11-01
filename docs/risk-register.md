@@ -292,6 +292,19 @@ The agent directly ran the migrated suite in a separate Linux directory using th
 
 ## First milestone: prove one complete coding path
 
+Implementation breakdown: [Hello World coding workflow plan](superpowers/plans/2026-11-01-hello-world-integration.md).
+The plan is a proposed implementation sequence; its checkboxes are not completed evidence.
+
+**2026-11-01 content sequencing decision:** The maintainer accepted the prepared
+coding content for Running the First Cangjie Program, Program Structure,
+Expressions and introductory Functions as sufficient for this implementation
+milestone. Basic Data Types coding-content authoring is deferred until later.
+This is a sequencing decision, not a reduction of the launch roadmap or evidence
+that lessons and multiple-choice activities have been prepared. Proceed with the
+application/persistence/worker integration rather than authoring more coding
+topics as a prerequisite. Existing reference execution evidence and content
+approval do not by themselves satisfy the integrated milestone below.
+
 Before broad feature implementation, demonstrate one genuine coding topic through the actual application and evaluator:
 
 1. Establish a learner and a valid unlocked-topic state consistent with the roadmap prerequisites.
