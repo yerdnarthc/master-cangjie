@@ -11,15 +11,17 @@ describe.skipIf(process.env.MCJ_REAL_SANDBOX !== 'true')('real sandbox adapter',
   const runtime = process.env.MCJ_EVALUATOR_RUNTIME ?? 'runsc-systrap';
   async function run(source: string, inputBase64 = '', signal?: AbortSignal) {
     const leaseDirectory = await mkdtemp(join(tmpdir(), 'mcj-sandbox-test-'));
+    let safeToRemoveTestDirectory = false;
     try {
       const result = await runSandbox({ requestId: randomUUID(), generation: 1,
         source, inputBase64, image, runtime, leaseDirectory }, signal);
+      safeToRemoveTestDirectory = result.cleanupConfirmed;
       expect(result.cleanupConfirmed).toBe(true);
       expect((await reconcileSandboxes(leaseDirectory)).removed).toEqual([]);
       return result;
     } finally {
-      // Test-local leases have no live coordinator after runSandbox returns.
-      await rm(leaseDirectory, { recursive: true, force: true });
+      // Preserve recovery evidence/lease identity when container cleanup fails.
+      if (safeToRemoveTestDirectory) await rm(leaseDirectory, { recursive: true, force: true });
     }
   }
   it('compiles actual Cangjie and retains exact output bytes', async () => {
