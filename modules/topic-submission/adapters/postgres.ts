@@ -55,8 +55,8 @@ export class PostgresSubmissions {
     const p=(await this.pool.query('SELECT * FROM learner_topic_progress WHERE learner_id=$1 AND topic_id=$2',[actor.learnerId,HELLO_TOPIC])).rows[0];
     const next=(await this.pool.query("SELECT available FROM learner_topic_progress WHERE learner_id=$1 AND topic_id='identifiers'",[actor.learnerId])).rows[0];
     const evaluation=(await this.pool.query('SELECT id FROM evaluation_attempts WHERE learner_id=$1 AND context->>\'problemId\'=$2 ORDER BY created_at DESC LIMIT 1',[actor.learnerId,content.problemId])).rows[0];
-    const submission=(await this.pool.query('SELECT id FROM topic_submissions WHERE learner_id=$1 ORDER BY created_at DESC LIMIT 1',[actor.learnerId])).rows[0];
-    const unresolved=(await this.pool.query("SELECT id FROM topic_submissions WHERE learner_id=$1 AND state<>'finalized' ORDER BY created_at DESC LIMIT 1",[actor.learnerId])).rows[0];
+    const submission=(await this.pool.query("SELECT id FROM topic_submissions WHERE learner_id=$1 AND snapshot->>'problemId'=$2 ORDER BY created_at DESC LIMIT 1",[actor.learnerId,content.problemId])).rows[0];
+    const unresolved=(await this.pool.query("SELECT id FROM topic_submissions WHERE learner_id=$1 AND snapshot->>'problemId'=$2 AND state<>'finalized' ORDER BY created_at DESC LIMIT 1",[actor.learnerId,content.problemId])).rows[0];
     return {learnerId:actor.learnerId,problem:publicProblem(content),draft,progress:{bestScore:p.best_score,completed:p.completed,nextTopicAvailable:!!next?.available},
       unresolvedSubmission:unresolved?await this.read(actor,unresolved.id):undefined,latestEvaluation:evaluation?await this.read(actor,evaluation.id):undefined,latestSubmission:submission?await this.read(actor,submission.id):undefined};
   }
@@ -158,7 +158,7 @@ export class PostgresSubmissions {
     await this.recoverAvailable(actor);
     let row=(await this.pool.query('SELECT * FROM evaluation_attempts WHERE id=$1 AND learner_id=$2',[id,actor.learnerId])).rows[0];
     const type=row?'evaluation':'submission';
-    row??=(await this.pool.query('SELECT * FROM topic_submissions WHERE id=$1 AND learner_id=$2',[id,actor.learnerId])).rows[0];
+    row??=(await this.pool.query("SELECT * FROM topic_submissions WHERE id=$1 AND learner_id=$2 AND snapshot->>'problemId' IS NOT NULL",[id,actor.learnerId])).rows[0];
     if(!row)throw new OperationError(404,'Operation not found.');
     const context=(type==='evaluation'?row.context:row.snapshot) as FixedContext;
     const a=await assessmentFor(this.pool,context.assessment.topicId,context.assessment.revision);

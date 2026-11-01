@@ -1,3 +1,36 @@
-import Link from 'next/link';
-import { onboarding } from '../../../../modules/roadmap/application/onboarding.ts';
-export default function Home(){return <div className="workspace-shell lesson-shell"><header className="topbar"><Link href="/">MasterCangjie</Link></header><main><p className="eyebrow">Start learning</p><h1>Getting Started with Cangjie</h1><p>Learn the essentials, prepare your tools, and run your first program.</p><p className="notice">Lesson preview: the first two quizzes are being prepared. These links do not represent earned topic unlocks.</p><ol className="topic-list">{onboarding.map(topic=><li className="panel" key={topic.id}><h2><Link href={`/topics/${topic.id}`}>{topic.title}</Link></h2><p>{topic.introduction}</p><span className="muted">{topic.activity==='coding'?'Coding activity available':'Multiple-choice activity coming soon'}</span></li>)}</ol><Link href="/topics/getting-started-with-cangjie">Start the first lesson</Link></main></div>;}
+import Link from "next/link";
+import { onboarding } from "../../../../modules/roadmap/application/onboarding.ts";
+export default function Home() {
+  return (
+    <div className="workspace-shell lesson-shell">
+      <header className="topbar">
+        <Link href="/">MasterCangjie</Link>
+      </header>
+      <main>
+        <p className="eyebrow">Start learning</p>
+        <h1>Getting Started with Cangjie</h1>
+        <p>
+          Learn the essentials, prepare your tools, and run your first program.
+        </p>
+        <ol className="topic-list">
+          {onboarding.map((topic) => (
+            <li className="panel" key={topic.id}>
+              <h2>
+                <Link href={`/topics/${topic.id}`}>{topic.title}</Link>
+              </h2>
+              <p>{topic.introduction}</p>
+              <span className="muted">
+                {topic.activity === "coding"
+                  ? "Coding activity available"
+                  : "Multiple-choice activity available"}
+              </span>
+            </li>
+          ))}
+        </ol>
+        <Link href="/topics/getting-started-with-cangjie">
+          Start the first lesson
+        </Link>
+      </main>
+    </div>
+  );
+}

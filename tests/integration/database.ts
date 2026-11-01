@@ -13,12 +13,18 @@ export async function testDatabase() {
   try { if(!(await admin.query('SELECT FROM pg_database WHERE datname=$1',[db])).rowCount)await admin.query(`CREATE DATABASE "${db}"`); } finally {await admin.end();}
   await migrate(testUrl); await setupRoles(testUrl); await seed(testUrl);
   const p = connect(testUrl).pool;
-  await p.query('TRUNCATE TABLE evaluation_exchange.jobs, evaluation_dispatch, solved_achievements, topic_submissions, validation_windows, evaluation_attempts, submission_reviews, draft_conflicts, coding_drafts CASCADE;');
+  await p.query('TRUNCATE TABLE evaluation_exchange.jobs, evaluation_dispatch, solved_achievements, topic_submissions, validation_windows, evaluation_attempts, submission_reviews, draft_conflicts, coding_drafts, quiz_drafts, quiz_draft_conflicts CASCADE;');
   return p;
 }
 export async function fixture(pool:ReturnType<typeof connect>['pool']) {
   const learnerId=randomUUID();
   await pool.query('INSERT INTO learner_accounts VALUES($1,$2)',[learnerId,`test-${learnerId}`]);
   await pool.query("INSERT INTO learner_topic_progress(learner_id,topic_id,available,completed) SELECT $1,id,position<3,position<2 FROM topics",[learnerId]);
+  return {learnerId};
+}
+export async function freshFixture(pool:ReturnType<typeof connect>['pool']) {
+  const learnerId=randomUUID();
+  await pool.query('INSERT INTO learner_accounts VALUES($1,$2)',[learnerId,`test-${learnerId}`]);
+  await pool.query("INSERT INTO learner_topic_progress(learner_id,topic_id,available,completed) SELECT $1,id,position=0,false FROM topics",[learnerId]);
   return {learnerId};
 }
