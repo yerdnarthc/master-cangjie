@@ -31,20 +31,193 @@ export type PendingQuizSubmission = {
 };
 const key = (learnerId: string, problemId: string) =>
   JSON.stringify([learnerId, problemId]);
+export type QuizDraftSnapshot = {
+  baseRevision: number;
+  answers: Record<string, string>;
+};
+export type QuizLocalDraft = {
+  key: string;
+  learnerId: string;
+  topicId: string;
+  tabId: string;
+  answers: Record<string, string>;
+  baseRevision: number;
+  dirty: boolean;
+  pendingSave: QuizDraftSnapshot | null;
+};
 type BrowserDatabase = Dexie & {
   drafts: EntityTable<LocalDraft, "key">;
   requests: EntityTable<PendingRequest, "key">;
+  quizDrafts: EntityTable<QuizLocalDraft, "key">;
 };
 let database: BrowserDatabase | undefined;
+
+function parseLegacyAnswers(source: unknown): Record<string, string> | undefined {
+  if (typeof source !== "string") return undefined;
+  try {
+    const value: unknown = JSON.parse(source);
+    if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+    if (Object.values(value).some((answer) => typeof answer !== "string")) return undefined;
+    return value as Record<string, string>;
+  } catch {
+    return undefined;
+  }
+}
+
+function migrateLegacyQuizDraft(draft: LocalDraft): QuizLocalDraft | undefined {
+  if (typeof draft.problemId !== "string" || typeof draft.learnerId !== "string" ||
+      typeof draft.dirty !== "boolean" || !Number.isSafeInteger(draft.baseRevision) ||
+      draft.baseRevision < 0) return undefined;
+  const parts = draft.problemId.split(":");
+  if (parts.length !== 3 || parts[0] !== "quiz" || !parts[1] || !parts[2]) return undefined;
+  const answers = parseLegacyAnswers(draft.source);
+  if (!answers) return undefined;
+  return {
+    key: draft.key,
+    learnerId: draft.learnerId,
+    topicId: parts[1],
+    tabId: parts[2],
+    answers,
+    baseRevision: draft.baseRevision,
+    dirty: draft.dirty,
+    pendingSave: null,
+  };
+}
+
 function db() {
   if (!database) {
     database = new Dexie("master-cangjie-work") as BrowserDatabase;
-    database!
+    database
       .version(1)
       .stores({ drafts: "key,learnerId", requests: "key,learnerId" });
+    database
+      .version(2)
+      .stores({
+        drafts: "key,learnerId",
+        requests: "key,learnerId",
+        quizDrafts: "key,learnerId,topicId,tabId",
+      })
+      .upgrade(async (transaction) => {
+        const drafts = transaction.table("drafts");
+        const quizDrafts = transaction.table("quizDrafts");
+        const legacyRows = (await drafts.toArray()) as LocalDraft[];
+        for (const legacy of legacyRows) {
+          const migrated = migrateLegacyQuizDraft(legacy);
+          if (!migrated) continue;
+          await quizDrafts.put(migrated);
+          await drafts.delete(legacy.key);
+        }
+      });
   }
-  return database!;
+  return database;
 }
+export const quizDrafts = {
+  async read(learnerId: string, topicId: string, tabId: string): Promise<QuizLocalDraft | undefined> {
+    return db().quizDrafts.get(key(learnerId, `quiz:${topicId}:${tabId}`));
+  },
+  async writeCurrent(
+    learnerId: string,
+    topicId: string,
+    tabId: string,
+    current: { answers: Record<string, string>; baseRevision: number; dirty: boolean },
+  ): Promise<void> {
+    const database = db();
+    const storageKey = key(learnerId, `quiz:${topicId}:${tabId}`);
+    await database.transaction("rw", database.quizDrafts, async () => {
+      const previous = await database.quizDrafts.get(storageKey);
+      await database.quizDrafts.put({
+        key: storageKey,
+        learnerId,
+        topicId,
+        tabId,
+        answers: { ...current.answers },
+        baseRevision: current.baseRevision,
+        dirty: current.dirty || !!previous?.pendingSave,
+        pendingSave: previous?.pendingSave ?? null,
+      });
+    });
+  },
+  async beginSave(
+    learnerId: string,
+    topicId: string,
+    tabId: string,
+    proposed: QuizDraftSnapshot,
+  ): Promise<QuizDraftSnapshot> {
+    const database = db();
+    const storageKey = key(learnerId, `quiz:${topicId}:${tabId}`);
+    return database.transaction("rw", database.quizDrafts, async () => {
+      const existing = await database.quizDrafts.get(storageKey);
+      if (existing?.pendingSave) return existing.pendingSave;
+      const pendingSave = { baseRevision: proposed.baseRevision, answers: { ...proposed.answers } };
+      await database.quizDrafts.put({
+        key: storageKey,
+        learnerId,
+        topicId,
+        tabId,
+        answers: existing?.answers ?? { ...proposed.answers },
+        baseRevision: existing?.baseRevision ?? proposed.baseRevision,
+        dirty: true,
+        pendingSave,
+      });
+      return pendingSave;
+    });
+  },
+  async acknowledge(
+    learnerId: string,
+    topicId: string,
+    tabId: string,
+    request: QuizDraftSnapshot,
+    workRevision: number,
+  ): Promise<QuizLocalDraft | undefined> {
+    const database = db();
+    const storageKey = key(learnerId, `quiz:${topicId}:${tabId}`);
+    return database.transaction("rw", database.quizDrafts, async () => {
+      const existing = await database.quizDrafts.get(storageKey);
+      if (!existing) return undefined;
+      if (!sameQuizSnapshot(existing.pendingSave, request)) return existing;
+      const updated: QuizLocalDraft = {
+        ...existing,
+        baseRevision: workRevision,
+        dirty: !sameAnswerMaps(existing.answers, request.answers),
+        pendingSave: null,
+      };
+      await database.quizDrafts.put(updated);
+      return updated;
+    });
+  },
+  async clearPending(
+    learnerId: string,
+    topicId: string,
+    tabId: string,
+    request: QuizDraftSnapshot,
+  ): Promise<void> {
+    const database = db();
+    const storageKey = key(learnerId, `quiz:${topicId}:${tabId}`);
+    await database.transaction("rw", database.quizDrafts, async () => {
+      const existing = await database.quizDrafts.get(storageKey);
+      if (!existing || !sameQuizSnapshot(existing.pendingSave, request)) return;
+      await database.quizDrafts.put({ ...existing, dirty: true, pendingSave: null });
+    });
+  },
+  async clear(learnerId: string, topicId: string, tabId: string): Promise<void> {
+    await db().quizDrafts.delete(key(learnerId, `quiz:${topicId}:${tabId}`));
+  },
+};
+
+function sameAnswerMaps(first: Record<string, string>, second: Record<string, string>): boolean {
+  const keys = Object.keys(first);
+  return keys.length === Object.keys(second).length &&
+    keys.every((questionId) => Object.hasOwn(second, questionId) && first[questionId] === second[questionId]);
+}
+
+function sameQuizSnapshot(
+  first: QuizDraftSnapshot | null | undefined,
+  second: QuizDraftSnapshot,
+): boolean {
+  return !!first && first.baseRevision === second.baseRevision &&
+    sameAnswerMaps(first.answers, second.answers);
+}
+
 export const browserDrafts = {
   key,
   read: (learnerId: string, problemId: string) =>

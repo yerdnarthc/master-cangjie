@@ -9,7 +9,7 @@ import type {
 import { lessonFor } from "../../../../modules/roadmap/application/onboarding.ts";
 import type { QuizEvaluation } from "../../../../modules/topic-submission/domain/quiz-evaluation.ts";
 import type { Score } from "../../../../modules/topic-submission/domain/evaluation.ts";
-import { browserDrafts, quizSubmissionRequests, type PendingQuizSubmission, type QuizSubmissionRequest } from "../../../../modules/activity-draft/adapters/browser-drafts.ts";
+import { quizDrafts, quizSubmissionRequests, type PendingQuizSubmission, type QuizDraftSnapshot, type QuizSubmissionRequest } from "../../../../modules/activity-draft/adapters/browser-drafts.ts";
 
 type QuizWorkspaceData = {
   learnerId: string;
@@ -156,15 +156,31 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
   const conflictRef = useRef<Extract<DraftResult, { kind: "conflict" }> | null>(null);
   const pendingLocal = useRef<QuizDraft | null>(null);
   const localWrites = useRef<Promise<unknown>>(Promise.resolve());
-  const storageKey = useRef("");
+  const localTabId = useRef("");
+  const queueLocalWrite = <T,>(work: () => Promise<T>): Promise<T> => {
+    const operation = localWrites.current.catch(() => {}).then(work);
+    localWrites.current = operation;
+    return operation;
+  };
   const preserveLocal = (learnerId: string, snapshot: QuizDraft | null) => {
     pendingLocal.current = snapshot;
-    const key = storageKey.current;
-    localWrites.current = localWrites.current.catch(() => {}).then(() => browserDrafts.save({
-      learnerId, problemId: key, source: JSON.stringify(snapshot?.answers ?? {}),
-      baseRevision: snapshot?.workRevision ?? 0, dirty: !!snapshot,
-    }));
-    void localWrites.current.catch(() => setError("Browser storage is unavailable. Keep this page open until your answers are saved."));
+    const operation = queueLocalWrite(() => quizDrafts.writeCurrent(
+      learnerId,
+      topicId,
+      localTabId.current,
+      {
+        answers: snapshot?.answers ?? answersRef.current,
+        baseRevision: snapshot?.workRevision ?? workRevision.current,
+        dirty: !!snapshot,
+      },
+    ));
+    void operation.catch(() => setError("Browser storage is unavailable. Keep this page open until your answers are saved."));
+  };
+  const clearLocal = (learnerId: string): Promise<void> => {
+    pendingLocal.current = null;
+    const operation = queueLocalWrite(() => quizDrafts.clear(learnerId, topicId, localTabId.current));
+    void operation.catch(() => setError("Browser storage is unavailable. Keep this page open until your answers are saved."));
+    return operation;
   };
 
   const load = useCallback(async () => {
@@ -175,11 +191,11 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
       );
       let tabId = sessionStorage.getItem('mcj-quiz-tab');
       if (!tabId) { tabId = crypto.randomUUID(); sessionStorage.setItem('mcj-quiz-tab', tabId); }
-      storageKey.current = `quiz:${topicId}:${tabId}`;
+      localTabId.current = tabId;
       await localWrites.current.catch(() => {});
-      const local = ws.learnerId ? await browserDrafts.read(ws.learnerId, storageKey.current) : undefined;
+      const local = ws.learnerId ? await quizDrafts.read(ws.learnerId, topicId, tabId) : undefined;
       const pending = ws.learnerId ? await quizSubmissionRequests.read(ws.learnerId, topicId) : null;
-      pendingLocal.current = local?.dirty ? { answers: JSON.parse(local.source), workRevision: local.baseRevision } : null;
+      pendingLocal.current = local?.dirty ? { answers: local.answers, workRevision: local.baseRevision } : null;
       pendingSubmissionRef.current = pending;
       setPendingSubmission(pending);
       setData(ws);
@@ -218,28 +234,52 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
     saving.current = true;
     let settle!: () => void;
     draftSaveSettled.current = new Promise<void>(resolve => { settle = resolve; });
-    const sentAnswers = answersRef.current;
     setSaveStatus("Saving draft…");
     try {
+      const proposed: QuizDraftSnapshot = {
+        baseRevision: workRevision.current,
+        answers: { ...answersRef.current },
+      };
+      const beginSave = localWrites.current.catch(() => {}).then(() =>
+        quizDrafts.beginSave(data.learnerId, topicId, localTabId.current, proposed),
+      );
+      localWrites.current = beginSave;
+      const sentSnapshot = await beginSave;
       const res = await timedRequest<DraftResult>(
         `/api/topics/${encodeURIComponent(topicId)}/quiz/draft`,
         {
-          baseRevision: workRevision.current,
-          answers: sentAnswers,
+          baseRevision: sentSnapshot.baseRevision,
+          answers: sentSnapshot.answers,
           expectedLearnerId: data.learnerId,
         },
         "PUT",
       );
 
-      if (res.kind === "saved" && res.workRevision !== undefined) {
+      if (res.kind === "saved") {
+        if (!Number.isSafeInteger(res.workRevision) || res.workRevision < 0) {
+          throw new Error("The draft save could not be confirmed.");
+        }
         workRevision.current = res.workRevision;
-        dirty.current = answersRef.current !== sentAnswers;
-        preserveLocal(data.learnerId, dirty.current ? { answers: answersRef.current, workRevision: res.workRevision } : null);
+        const acknowledge = localWrites.current.catch(() => {}).then(() =>
+          quizDrafts.acknowledge(data.learnerId, topicId, localTabId.current, sentSnapshot, res.workRevision),
+        );
+        localWrites.current = acknowledge;
+        const latest = await acknowledge;
+        dirty.current = !sameAnswers(answersRef.current, sentSnapshot.answers) ||
+          !!latest?.dirty || !!latest?.pendingSave;
+        pendingLocal.current = dirty.current
+          ? { answers: answersRef.current, workRevision: res.workRevision }
+          : null;
         setSaveStatus(dirty.current ? "Unsaved changes" : "Saved on server");
         if (dirty.current) setSaveVersion(version => version + 1);
         return !dirty.current;
       }
       if (res.kind === "conflict") {
+        const clearPending = localWrites.current.catch(() => {}).then(() =>
+          quizDrafts.clearPending(data.learnerId, topicId, localTabId.current, sentSnapshot),
+        );
+        localWrites.current = clearPending;
+        await clearPending;
         conflictRef.current = res;
         setConflict(res);
         answersRef.current = res.candidate.answers;
@@ -285,7 +325,7 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
       const chosen = choice === 'server' ? current.server.answers : current.candidate.answers;
       const local = pendingLocal.current;
       if (local && JSON.stringify(local.answers) === JSON.stringify(current.candidate.answers)) {
-        preserveLocal(data!.learnerId, null);
+        await clearLocal(data!.learnerId);
       }
       let next = result.nextConflict ?? null;
       // Preserve newer local edits as a competing draft rather than overwriting the chosen work.
@@ -295,7 +335,7 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
           baseRevision: pending.workRevision, answers: pending.answers,
         }, 'PUT');
         if (saved.kind === 'conflict') next = saved;
-        else { workRevision.current = saved.workRevision; preserveLocal(data!.learnerId, null); }
+        else { workRevision.current = saved.workRevision; await clearLocal(data!.learnerId); }
       }
       await localWrites.current;
       conflictRef.current = next;
@@ -419,7 +459,7 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
           if (currentAnswersMatch) {
             workRevision.current = draft.workRevision;
             dirty.current = false;
-            preserveLocal(data.learnerId, null);
+            await clearLocal(data.learnerId);
             setSaveStatus('Saved on server');
           }
           const ready = await quizSubmissionRequests.setReady(data.learnerId, topicId, preparingKey, owner);
