@@ -493,32 +493,43 @@ export default function CodingWorkspace({
   }
 
   async function resolve(choice: "server" | "candidate") {
-    if (!conflict) return;
+    const activeConflict = conflict;
+    if (!activeConflict) return;
     await act(async () => {
-      const selected = conflict[choice].source;
+      const selected = activeConflict[choice].source;
       const beforeResolution = sourceRef.current;
-      sourceRef.current = selected;
-      revision.current = conflict[choice].workRevision;
-      dirty.current = false;
-      conflictRef.current = false;
-      setSource(selected);
-      setConflict(undefined);
-      setSaveStatus("Saved on server");
-      await cache().catch(storageError);
-      await request(
+      const result = await request<SaveResult>(
         "/api/drafts/resolve",
         {
-          conflictId: conflict.conflictId,
+          conflictId: activeConflict.conflictId,
           choice,
-          baseRevision: conflict[choice].workRevision,
+          baseRevision: activeConflict.server.workRevision,
         },
         "POST",
       );
-      if (sourceRef.current !== selected) {
-        dirty.current = true;
-        setSaveStatus("Unsynced local changes");
-        await cache().catch(storageError);
+
+      if (result.kind === "conflict") {
+        conflictRef.current = true;
+        setConflict(result);
+        setSaveStatus("Draft conflict · both versions preserved");
+        return;
       }
+
+      const changedDuringResolution = sourceRef.current !== beforeResolution;
+      const hasNewerLocalDraft =
+        beforeResolution !== activeConflict.candidate.source &&
+        beforeResolution !== activeConflict.server.source;
+      revision.current = result.workRevision;
+      if (!changedDuringResolution && !hasNewerLocalDraft)
+        sourceRef.current = selected;
+      dirty.current = sourceRef.current !== selected;
+      conflictRef.current = false;
+      setSource(sourceRef.current);
+      setConflict(undefined);
+      setSaveStatus(
+        dirty.current ? "Unsynced local changes" : "Saved on server",
+      );
+      await cache().catch(storageError);
     });
   }
 
@@ -819,7 +830,7 @@ export default function CodingWorkspace({
                 <h3>Saved on server</h3>
                 <pre>{conflict.server.source}</pre>
                 <h3>Your competing code</h3>
-                <pre>{conflict.candidate.source}</pre>
+                <pre>{source}</pre>
                 <div className="actions">
                   <button
                     disabled={busy}
