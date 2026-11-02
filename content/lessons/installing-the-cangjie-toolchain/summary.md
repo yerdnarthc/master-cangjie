@@ -1,0 +1,3 @@
+- Match the SDK to your operating system and architecture.
+- Load the environment for the shell you actually use.
+- Verify version 1.0.5 in the same terminal before compiling.

@@ -1,0 +1,3 @@
+- if-else in Cangjie is an expression that evaluates to a value.
+- while and for-in loops repeat code over conditions or ranges.
+- Use break to exit loops early and continue to advance to the next cycle.

@@ -1,0 +1,32 @@
+{
+  "id": "identifiers",
+  "title": "Identifiers",
+  "categoryId": "basic-concepts",
+  "categoryTitle": "Basic Concepts",
+  "position": 3,
+  "activity": "quiz",
+  "sections": [
+    {
+      "id": "naming-elements",
+      "title": "Naming elements in Cangjie"
+    },
+    {
+      "id": "syntax-rules",
+      "title": "Starting characters and character sets"
+    },
+    {
+      "id": "keywords-and-raw",
+      "title": "Reserved keywords and raw identifiers"
+    },
+    {
+      "id": "wildcard-and-conventions",
+      "title": "The wildcard identifier and naming conventions"
+    }
+  ],
+  "sources": [
+    {
+      "label": "Official Cangjie program structure guide",
+      "href": "https://docs.cangjie-lang.cn/en/docs/1.0.0/user_manual/source_en/basic_programming_concepts/program_structure.html"
+    }
+  ]
+}

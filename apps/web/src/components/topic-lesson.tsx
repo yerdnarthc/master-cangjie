@@ -1,17 +1,19 @@
 import Link from "next/link";
 import Markdown from "react-markdown";
-import {
-  curriculum,
-  lessonsForCategory,
-  type Lesson,
-} from "../../../../modules/roadmap/application/onboarding.ts";
+import type { Lesson, TopicMetadata } from "../../../../modules/roadmap/application/onboarding.ts";
 
-export default function TopicLesson({ lesson }: { lesson: Lesson }) {
-  const globalPosition = curriculum.findIndex((topic) => topic.id === lesson.id);
-  const categoryLessons = lessonsForCategory(lesson.categoryId);
+export default function TopicLesson({
+  lesson,
+  catalog,
+}: {
+  lesson: Lesson;
+  catalog: TopicMetadata[];
+}) {
+  const globalPosition = catalog.findIndex((topic) => topic.id === lesson.id);
+  const categoryLessons = catalog.filter((topic) => topic.categoryId === lesson.categoryId);
   const categoryPosition = categoryLessons.findIndex((topic) => topic.id === lesson.id);
-  const previous = curriculum[globalPosition - 1];
-  const next = curriculum[globalPosition + 1];
+  const previous = catalog[globalPosition - 1];
+  const next = catalog[globalPosition + 1];
 
   return (
     <div className="workspace-shell lesson-shell">
@@ -69,11 +71,7 @@ export default function TopicLesson({ lesson }: { lesson: Lesson }) {
               ))}
               <section id="summary">
                 <h2>Summary</h2>
-                <ul>
-                  {lesson.summary.map((point) => (
-                    <li key={point}>{point}</li>
-                  ))}
-                </ul>
+                <Markdown>{lesson.summary}</Markdown>
               </section>
               <footer className="lesson-sources">
                 <h2>Further reading</h2>

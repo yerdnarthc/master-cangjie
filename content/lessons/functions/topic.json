@@ -1,0 +1,28 @@
+{
+  "id": "functions",
+  "title": "Functions",
+  "categoryId": "basic-concepts",
+  "categoryTitle": "Basic Concepts",
+  "position": 6,
+  "activity": "coding",
+  "sections": [
+    {
+      "id": "declaring-functions",
+      "title": "Declaring functions with func"
+    },
+    {
+      "id": "parameters-and-returns",
+      "title": "Parameters and return values"
+    },
+    {
+      "id": "unit-functions",
+      "title": "Functions without return values (Unit)"
+    }
+  ],
+  "sources": [
+    {
+      "label": "Official functions documentation",
+      "href": "https://docs.cangjie-lang.cn/en/docs/1.0.0/user_manual/source_en/basic_programming_concepts/functions.html"
+    }
+  ]
+}

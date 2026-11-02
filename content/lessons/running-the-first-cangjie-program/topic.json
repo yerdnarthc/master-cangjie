@@ -1,0 +1,32 @@
+{
+  "id": "running-the-first-cangjie-program",
+  "title": "Running the First Cangjie Program",
+  "categoryId": "getting-started-with-cangjie",
+  "categoryTitle": "Getting Started with Cangjie",
+  "position": 2,
+  "activity": "coding",
+  "sections": [
+    {
+      "id": "read-program",
+      "title": "Read the program"
+    },
+    {
+      "id": "compile-run",
+      "title": "Compile, then run"
+    },
+    {
+      "id": "practice-output",
+      "title": "Check the output"
+    }
+  ],
+  "sources": [
+    {
+      "label": "Official first-program guide",
+      "href": "https://docs.cangjie-lang.cn/en/docs/1.0.0/user_manual/source_en/first_understanding/hello_world.html"
+    },
+    {
+      "label": "Official program entry and structure",
+      "href": "https://docs.cangjie-lang.cn/en/docs/1.0.0/user_manual/source_en/basic_programming_concepts/program_structure.html"
+    }
+  ]
+}

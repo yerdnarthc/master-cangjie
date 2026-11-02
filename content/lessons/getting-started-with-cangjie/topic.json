@@ -1,0 +1,32 @@
+{
+  "id": "getting-started-with-cangjie",
+  "title": "Getting Started with Cangjie",
+  "categoryId": "getting-started-with-cangjie",
+  "categoryTitle": "Getting Started with Cangjie",
+  "position": 0,
+  "activity": "quiz",
+  "sections": [
+    {
+      "id": "meet-cangjie",
+      "title": "Meet Cangjie"
+    },
+    {
+      "id": "source-to-output",
+      "title": "From source code to output"
+    },
+    {
+      "id": "your-first-topics",
+      "title": "Your first three topics"
+    }
+  ],
+  "sources": [
+    {
+      "label": "Official language introduction",
+      "href": "https://docs.cangjie-lang.cn/en/docs/1.0.0/user_manual/source_en/first_understanding/basic.html"
+    },
+    {
+      "label": "Official program structure guide",
+      "href": "https://docs.cangjie-lang.cn/en/docs/1.0.0/user_manual/source_en/basic_programming_concepts/program_structure.html"
+    }
+  ]
+}

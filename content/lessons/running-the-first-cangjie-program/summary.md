@@ -1,0 +1,3 @@
+- Execution begins at main; println adds a newline.
+- Compilation and execution are separate steps.
+- Use the activity to run, validate, review, and submit your program.

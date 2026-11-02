@@ -1,0 +1,32 @@
+{
+  "id": "installing-the-cangjie-toolchain",
+  "title": "Installing the Cangjie Toolchain",
+  "categoryId": "getting-started-with-cangjie",
+  "categoryTitle": "Getting Started with Cangjie",
+  "position": 1,
+  "activity": "quiz",
+  "sections": [
+    {
+      "id": "choose-sdk",
+      "title": "Choose the SDK for your machine"
+    },
+    {
+      "id": "prepare-terminal",
+      "title": "Prepare your terminal"
+    },
+    {
+      "id": "verify-compiler",
+      "title": "Verify the compiler"
+    }
+  ],
+  "sources": [
+    {
+      "label": "Official Cangjie 1.0.5 downloads and installation guides",
+      "href": "https://cangjie-lang.cn/download/1.0.5"
+    },
+    {
+      "label": "Official toolchain installation overview",
+      "href": "https://docs.cangjie-lang.cn/en/docs/1.0.0/user_manual/source_en/first_understanding/install_Community.html"
+    }
+  ]
+}

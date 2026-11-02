@@ -1,0 +1,3 @@
+- Execution begins at main, returning Int64 or Unit.
+- Use let for immutable values and var for mutable variables.
+- Curly braces create block scopes; inner scopes can shadow outer identifiers.

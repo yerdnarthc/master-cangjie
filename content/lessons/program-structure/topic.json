@@ -1,0 +1,28 @@
+{
+  "id": "program-structure",
+  "title": "Program Structure",
+  "categoryId": "basic-concepts",
+  "categoryTitle": "Basic Concepts",
+  "position": 4,
+  "activity": "coding",
+  "sections": [
+    {
+      "id": "entry-point",
+      "title": "The main entry point"
+    },
+    {
+      "id": "bindings-and-mutability",
+      "title": "Immutable and mutable bindings"
+    },
+    {
+      "id": "scopes-and-shadowing",
+      "title": "Block scopes and shadowing"
+    }
+  ],
+  "sources": [
+    {
+      "label": "Official program structure and bindings",
+      "href": "https://docs.cangjie-lang.cn/en/docs/1.0.0/user_manual/source_en/basic_programming_concepts/program_structure.html"
+    }
+  ]
+}

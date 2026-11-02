@@ -6,7 +6,6 @@ import type {
   PublicQuiz,
   PublicQuestion,
 } from "../../../../modules/roadmap/adapters/quiz-content.ts";
-import { lessonFor } from "../../../../modules/roadmap/application/onboarding.ts";
 import type { QuizEvaluation } from "../../../../modules/topic-submission/domain/quiz-evaluation.ts";
 import type { Score } from "../../../../modules/topic-submission/domain/evaluation.ts";
 import { quizDrafts, quizSubmissionRequests, type PendingQuizSubmission, type QuizDraftSnapshot, type QuizLocalDraft, type QuizSubmissionRequest } from "../../../../modules/activity-draft/adapters/browser-drafts.ts";
@@ -140,7 +139,7 @@ function sameAnswers(first: Record<string, string>, second: Record<string, strin
 const RETRY_DELAYS_MS = [1000, 2000, 4000] as const;
 const STORAGE_WARNING = "Browser storage is unavailable. Keep this page open until your answers are saved.";
 
-export default function QuizWorkspace({ topicId }: { topicId: string }) {
+export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { topicId: string; topicTitle: string; categoryTitle: string }) {
   const [data, setData] = useState<QuizWorkspaceData | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [saveStatus, setSaveStatus] = useState<string>("Loading activity…");
@@ -742,9 +741,6 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
     evaluation?.questionResults.map((r) => [r.questionId, r]) ?? [],
   );
 
-  const lesson = lessonFor(topicId);
-  const categoryTitle = lesson?.categoryTitle ?? "MasterCangjie";
-
   return (
     <div className="workspace-shell">
       <header className="topbar">
@@ -759,7 +755,7 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
         <div className="breadcrumb">
           <Link href="/">{categoryTitle}</Link>
           <span>/</span>
-          <Link href={`/topics/${topicId}`}>{data?.quiz.title}</Link>
+          <Link href={`/topics/${topicId}`}>{topicTitle}</Link>
           <span>/</span>
           <span>Activity</span>
         </div>

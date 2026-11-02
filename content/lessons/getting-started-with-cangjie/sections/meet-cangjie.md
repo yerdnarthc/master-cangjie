@@ -1,0 +1,3 @@
+Cangjie is a general-purpose programming language. You can write step-by-step instructions, build programs around functions, or organize them into objects. These styles are called imperative, functional, and object-oriented programming. For now, start with a small program and learn the rest as you need it.
+
+Cangjie checks types when you compile your code. That makes it statically typed. It can also infer some types, so you do not always need to write a type annotation yourself. A successful compilation means the code passed those checks; you still need to run it and check whether it does what you intended.

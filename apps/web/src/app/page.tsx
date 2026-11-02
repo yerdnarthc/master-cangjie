@@ -1,10 +1,16 @@
 import Link from "next/link";
-import {
-  categories,
-  lessonsForCategory,
-} from "../../../../modules/roadmap/application/onboarding.ts";
+import { categories, type Lesson } from "../../../../modules/roadmap/application/onboarding.ts";
+import { lessonContent } from "../bootstrap/roadmap";
 
-export default function Home() {
+export default async function Home() {
+  const metadata = await lessonContent.listMetadata();
+  const loadedLessons = await Promise.all(
+    metadata.map(async ({ id }) => {
+      const lesson = await lessonContent.readLesson(id);
+      if (!lesson) throw new Error(`Lesson content is missing for ${id}.`);
+      return lesson;
+    }),
+  );
   return (
     <div className="workspace-shell lesson-shell">
       <header className="topbar">
@@ -18,7 +24,9 @@ export default function Home() {
         </p>
 
         {categories.map((category, catIdx) => {
-          const categoryTopics = lessonsForCategory(category.id);
+          const categoryTopics = loadedLessons.filter(
+            (topic: Lesson) => topic.categoryId === category.id,
+          );
           return (
             <section key={category.id} style={{ marginTop: '2.5rem' }}>
               <p className="eyebrow" style={{ margin: '0 0 .3rem' }}>

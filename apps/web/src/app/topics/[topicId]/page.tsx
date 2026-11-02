@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import TopicLesson from "../../../components/topic-lesson";
-import { lessonFor } from "../../../../../../modules/roadmap/application/onboarding.ts";
+import { lessonContent } from "../../../bootstrap/roadmap";
 
 export default async function Topic({
   params,
@@ -8,7 +8,10 @@ export default async function Topic({
   params: Promise<{ topicId: string }>;
 }) {
   const { topicId } = await params;
-  const lesson = lessonFor(topicId);
-  if (lesson) return <TopicLesson lesson={lesson} />;
+  const [lesson, catalog] = await Promise.all([
+    lessonContent.readLesson(topicId),
+    lessonContent.listMetadata(),
+  ]);
+  if (lesson) return <TopicLesson lesson={lesson} catalog={catalog} />;
   notFound();
 }

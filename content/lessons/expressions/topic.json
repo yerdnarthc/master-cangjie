@@ -1,0 +1,28 @@
+{
+  "id": "expressions",
+  "title": "Expressions",
+  "categoryId": "basic-concepts",
+  "categoryTitle": "Basic Concepts",
+  "position": 5,
+  "activity": "coding",
+  "sections": [
+    {
+      "id": "if-expressions",
+      "title": "Conditionals as expressions"
+    },
+    {
+      "id": "loops",
+      "title": "Loops: while and for-in"
+    },
+    {
+      "id": "flow-control",
+      "title": "Break and continue"
+    }
+  ],
+  "sources": [
+    {
+      "label": "Official expressions documentation",
+      "href": "https://docs.cangjie-lang.cn/en/docs/1.0.0/user_manual/source_en/basic_programming_concepts/expressions.html"
+    }
+  ]
+}

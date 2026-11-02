@@ -1,0 +1,3 @@
+- Source code is the text you write; an executable is the compiled program you run.
+- Cangjie checks types during compilation.
+- An editor, a compiler, and a terminal have different jobs.

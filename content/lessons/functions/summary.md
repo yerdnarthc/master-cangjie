@@ -1,0 +1,3 @@
+- Declare functions using func name(params): ReturnType { ... }.
+- Parameters are immutable within the function body.
+- Functions producing no meaningful value return Unit.

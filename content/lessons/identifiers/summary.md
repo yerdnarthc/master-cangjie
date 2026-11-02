@@ -1,0 +1,4 @@
+- Identifiers must begin with a letter or underscore, never a digit.
+- Cangjie is strictly case-sensitive.
+- Use backticks (`let`) for raw identifiers when you must use a keyword as a name.
+- Follow standard conventions: UpperCamelCase for types, lowerCamelCase for variables and functions.

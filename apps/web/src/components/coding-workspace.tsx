@@ -8,7 +8,6 @@ import {
   browserDrafts,
   type PendingRequest,
 } from "../../../../modules/activity-draft/adapters/browser-drafts.ts";
-import { lessonFor } from "../../../../modules/roadmap/application/onboarding.ts";
 import type {
   OperationView,
   Review,
@@ -58,9 +57,13 @@ async function request<T>(
 }
 
 export default function CodingWorkspace({
-  topicId = "running-the-first-cangjie-program",
+  topicId,
+  topicTitle,
+  categoryTitle,
 }: {
-  topicId?: string;
+  topicId: string;
+  topicTitle: string;
+  categoryTitle: string;
 }) {
   const [workspace, setWorkspace] = useState<Workspace>();
   const [source, setSource] = useState("");
@@ -86,10 +89,6 @@ export default function CodingWorkspace({
   const actor = useRef("");
   const saving = useRef<Promise<boolean> | undefined>(undefined);
   const acting = useRef(false);
-
-  const lesson = lessonFor(topicId);
-  const categoryTitle = lesson?.categoryTitle ?? "Basic Concepts";
-  const topicTitle = lesson?.title ?? workspace?.problem.title ?? "Coding Topic";
 
   const cache = useCallback(async () => {
     const w = current.current;

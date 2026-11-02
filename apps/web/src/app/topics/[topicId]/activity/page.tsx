@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import CodingWorkspace from "../../../../components/coding-workspace";
 import QuizWorkspace from "../../../../components/quiz-workspace";
+import { lessonContent } from "../../../../bootstrap/roadmap";
 
 export default async function Activity({
   params,
@@ -9,22 +10,24 @@ export default async function Activity({
 }) {
   const { topicId } = await params;
 
-  if (
-    topicId === "getting-started-with-cangjie" ||
-    topicId === "installing-the-cangjie-toolchain" ||
-    topicId === "identifiers"
-  ) {
-    return <QuizWorkspace topicId={topicId} />;
+  const topic = await lessonContent.readMetadata(topicId);
+  if (!topic) notFound();
+
+  if (topic.activity === "quiz") {
+    return (
+      <QuizWorkspace
+        topicId={topicId}
+        topicTitle={topic.title}
+        categoryTitle={topic.categoryTitle}
+      />
+    );
   }
 
-  if (
-    topicId === "running-the-first-cangjie-program" ||
-    topicId === "program-structure" ||
-    topicId === "expressions" ||
-    topicId === "functions"
-  ) {
-    return <CodingWorkspace topicId={topicId} />;
-  }
-
-  notFound();
+  return (
+    <CodingWorkspace
+      topicId={topicId}
+      topicTitle={topic.title}
+      categoryTitle={topic.categoryTitle}
+    />
+  );
 }
