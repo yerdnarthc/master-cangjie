@@ -72,6 +72,15 @@ describe("lesson content adapter", () => {
       "functions",
     ]);
     expect(topics.map(({ position }) => position)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+    expect(topics.map(({ activity }) => activity)).toEqual([
+      "quiz",
+      "quiz",
+      "coding",
+      "quiz",
+      "coding",
+      "coding",
+      "coding",
+    ]);
   });
 
   it("loads every required Markdown file for all seven topics", async () => {
@@ -221,6 +230,21 @@ describe("lesson content adapter", () => {
       await expect(
         new FileLessonContent(root).readLesson("sample-topic"),
       ).rejects.toThrow(/section first-section/i);
+    });
+  });
+
+  it.each([
+    ["introduction", "introduction.md"],
+    ["summary", "summary.md"],
+  ])("fails clearly when the %s Markdown file is missing", async (_label, filename) => {
+    await withTemporaryRoot(async (root) => {
+      const metadata = fixtureMetadata("sample-topic");
+      await writeLessonFixture(root, "sample-topic", metadata);
+      await rm(resolve(root, "sample-topic", filename));
+
+      await expect(
+        new FileLessonContent(root).readLesson("sample-topic"),
+      ).rejects.toThrow(new RegExp(`${_label} Markdown`));
     });
   });
 

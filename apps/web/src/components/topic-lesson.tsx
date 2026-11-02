@@ -26,7 +26,9 @@ export default function TopicLesson({
           {lesson.categoryTitle} / Topic {categoryPosition + 1} of {categoryLessons.length}
         </p>
         <h1>{lesson.title}</h1>
-        <p className="lesson-introduction">{lesson.introduction}</p>
+        <div className="lesson-introduction">
+          <Markdown>{lesson.introduction}</Markdown>
+        </div>
         <div className="lesson-columns">
           <aside className="panel lesson-navigation">
             <nav aria-label={`${lesson.categoryTitle} topics`}>
