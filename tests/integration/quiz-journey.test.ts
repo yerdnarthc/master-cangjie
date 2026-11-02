@@ -16,6 +16,25 @@ afterAll(async () => {
   await pool?.end();
 });
 
+it('restores and advances multiple conflicts without changing submitted history', async () => {
+  const actor = await freshFixture(pool);
+  const topic = 'getting-started-with-cangjie';
+  await quizSubmissions.saveDraft(actor, topic, { baseRevision: 0, answers: { q: 'server' } });
+  const result = await quizSubmissions.saveDraft(actor, topic, { baseRevision: 0, answers: { q: 'candidate' } });
+  const second = await quizSubmissions.saveDraft(actor, topic, { baseRevision: 0, answers: { q: 'later' } });
+  expect(result.kind).toBe('conflict');
+  const workspace = await quizSubmissions.workspace(actor, topic);
+  expect(workspace.conflict).toEqual(result);
+  if (result.kind !== 'conflict') throw new Error('Expected conflict');
+  const resolved = await quizSubmissions.resolveDraft(actor, topic, { conflictId: result.conflictId, choice: 'candidate', baseRevision: result.server.workRevision });
+  expect(resolved.kind).toBe('saved');
+  if (resolved.kind !== 'saved' || second.kind !== 'conflict') throw new Error('Expected saved conflict');
+  expect(resolved.nextConflict?.conflictId).toBe(second.conflictId);
+  expect(resolved.nextConflict?.server.answers).toEqual({ q: 'candidate' });
+  await quizSubmissions.resolveDraft(actor, topic, { conflictId: second.conflictId, choice: 'server', baseRevision: resolved.workRevision });
+  expect((await quizSubmissions.workspace(actor, topic)).conflict).toBeNull();
+});
+
 it('tests the complete multiple-choice workflow: draft, submit, retry retention, and explicit completion unlocking next topic', async () => {
   const actor = await freshFixture(pool);
   const topic1 = 'getting-started-with-cangjie';

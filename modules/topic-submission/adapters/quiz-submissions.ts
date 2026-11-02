@@ -15,6 +15,7 @@ import {
 } from "../../roadmap/adapters/quiz-content.ts";
 import {
   readQuizDraft,
+  readOpenQuizConflict,
   saveQuizDraftIn,
   resolveQuizDraftIn,
   type QuizDraft,
@@ -64,6 +65,7 @@ export type QuizWorkspaceView = {
   topicId: string;
   quiz: PublicQuiz;
   draft: QuizDraft;
+  conflict: Extract<SaveQuizResult, { kind: "conflict" }> | null;
   progress: {
     bestScore: Score | null;
     completed: boolean;
@@ -112,6 +114,7 @@ export class PostgresQuizSubmissions {
       topicId,
     );
     const draft = await readQuizDraft(this.pool, actor, topicId);
+    const conflict = await readOpenQuizConflict(this.pool, actor, topicId, draft);
     const p = (
       await this.pool.query(
         "SELECT * FROM learner_topic_progress WHERE learner_id=$1 AND topic_id=$2",
@@ -157,6 +160,7 @@ export class PostgresQuizSubmissions {
       topicId,
       quiz: publicQuiz(quiz),
       draft,
+      conflict,
       progress: {
         bestScore: p.best_score,
         completed: p.completed,

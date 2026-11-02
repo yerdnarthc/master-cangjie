@@ -12,13 +12,27 @@ export type QuizDraft = {
 };
 
 export type SaveQuizResult =
-  | { kind: "saved"; workRevision: number }
+  | { kind: "saved"; workRevision: number; nextConflict?: Extract<SaveQuizResult, { kind: "conflict" }> | null }
   | {
       kind: "conflict";
       conflictId: string;
       server: QuizDraft;
       candidate: QuizDraft;
     };
+
+export async function readOpenQuizConflict(
+  client: pg.Pool | pg.PoolClient,
+  actor: Actor,
+  topicId: string,
+  server: QuizDraft,
+): Promise<Extract<SaveQuizResult, { kind: "conflict" }> | null> {
+  const result = await client.query(
+    'SELECT id, base_revision, candidate_answers FROM quiz_draft_conflicts WHERE learner_id=$1 AND topic_id=$2 AND resolved=false ORDER BY created_at, id LIMIT 1',
+    [actor.learnerId, topicId],
+  );
+  const row = result.rows[0];
+  return row ? { kind: 'conflict', conflictId: row.id, server, candidate: { answers: row.candidate_answers, workRevision: row.base_revision } } : null;
+}
 
 function validateAnswers(
   answers: unknown,
@@ -153,5 +167,7 @@ export async function resolveQuizDraftIn(
     "UPDATE quiz_draft_conflicts SET resolved=true WHERE id=$1",
     [conflict.id],
   );
-  return { kind: "saved", workRevision: draft.workRevision + 1 };
+  const workRevision = draft.workRevision + 1;
+  const nextConflict = await readOpenQuizConflict(client, actor, topicId, { answers, workRevision });
+  return { kind: "saved", workRevision, nextConflict };
 }

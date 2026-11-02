@@ -8,12 +8,14 @@ import type {
 } from "../../../../modules/roadmap/adapters/quiz-content.ts";
 import type { QuizEvaluation } from "../../../../modules/topic-submission/domain/quiz-evaluation.ts";
 import type { Score } from "../../../../modules/topic-submission/domain/evaluation.ts";
+import { browserDrafts } from "../../../../modules/activity-draft/adapters/browser-drafts.ts";
 
 type QuizWorkspaceData = {
   learnerId: string;
   topicId: string;
   quiz: PublicQuiz;
   draft: { answers: Record<string, string>; workRevision: number };
+  conflict?: Extract<DraftResult, { kind: "conflict" }> | null;
   progress: {
     bestScore: Score | null;
     completed: boolean;
@@ -26,6 +28,11 @@ type QuizWorkspaceData = {
     submittedAt: string;
   };
 };
+
+type QuizDraft = { answers: Record<string, string>; workRevision: number };
+type DraftResult =
+  | { kind: "saved"; workRevision: number; nextConflict?: Extract<DraftResult, { kind: "conflict" }> | null }
+  | { kind: "conflict"; conflictId: string; server: QuizDraft; candidate: QuizDraft };
 
 class RequestError extends Error {
   constructor(
@@ -74,11 +81,27 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
   const [showConfirmUnanswered, setShowConfirmUnanswered] =
     useState<boolean>(false);
   const [evaluation, setEvaluation] = useState<QuizEvaluation | null>(null);
+  const [conflict, setConflict] = useState<Extract<DraftResult, { kind: "conflict" }> | null>(null);
+  const [resolving, setResolving] = useState(false);
+  const [conflictChanged, setConflictChanged] = useState(false);
 
   const workRevision = useRef<number>(0);
   const answersRef = useRef<Record<string, string>>({});
   const dirty = useRef<boolean>(false);
   const saving = useRef<boolean>(false);
+  const conflictRef = useRef<Extract<DraftResult, { kind: "conflict" }> | null>(null);
+  const pendingLocal = useRef<QuizDraft | null>(null);
+  const localWrites = useRef<Promise<unknown>>(Promise.resolve());
+  const storageKey = useRef("");
+  const preserveLocal = (learnerId: string, snapshot: QuizDraft | null) => {
+    pendingLocal.current = snapshot;
+    const key = storageKey.current;
+    localWrites.current = localWrites.current.catch(() => {}).then(() => browserDrafts.save({
+      learnerId, problemId: key, source: JSON.stringify(snapshot?.answers ?? {}),
+      baseRevision: snapshot?.workRevision ?? 0, dirty: !!snapshot,
+    }));
+    void localWrites.current.catch(() => setError("Browser storage is unavailable. Keep this page open until your answers are saved."));
+  };
 
   const load = useCallback(async () => {
     setError("");
@@ -86,13 +109,22 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
       const ws = await request<QuizWorkspaceData>(
         `/api/topics/${encodeURIComponent(topicId)}/quiz`,
       );
+      let tabId = sessionStorage.getItem('mcj-quiz-tab');
+      if (!tabId) { tabId = crypto.randomUUID(); sessionStorage.setItem('mcj-quiz-tab', tabId); }
+      storageKey.current = `quiz:${topicId}:${tabId}`;
+      await localWrites.current.catch(() => {});
+      const local = ws.learnerId ? await browserDrafts.read(ws.learnerId, storageKey.current) : undefined;
+      pendingLocal.current = local?.dirty ? { answers: JSON.parse(local.source), workRevision: local.baseRevision } : null;
       setData(ws);
       workRevision.current = ws.draft.workRevision;
-      const initialAnswers = ws.draft.answers ?? {};
+      conflictRef.current = ws.conflict ?? null;
+      setConflict(ws.conflict ?? null);
+      const initialAnswers = ws.conflict?.candidate.answers ?? pendingLocal.current?.answers ?? ws.draft.answers ?? {};
       answersRef.current = initialAnswers;
       setAnswers(initialAnswers);
-      dirty.current = false;
-      setSaveStatus("All changes saved");
+      dirty.current = !ws.conflict && !!pendingLocal.current;
+      if (dirty.current) workRevision.current = pendingLocal.current!.workRevision;
+      setSaveStatus(ws.conflict ? "Choose which draft to keep" : dirty.current ? "Unsaved changes" : "All changes saved");
 
       if (ws.latestSubmission) {
         setEvaluation(ws.latestSubmission.evaluation);
@@ -115,16 +147,12 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
   }, [load]);
 
   const save = useCallback(async (): Promise<boolean> => {
-    if (saving.current || !dirty.current || !data) return false;
+    if (saving.current || conflictRef.current || !dirty.current || !data) return false;
     saving.current = true;
     const sentAnswers = answersRef.current;
     setSaveStatus("Saving draft…");
     try {
-      const res = await request<{
-        kind: string;
-        workRevision?: number;
-        conflictId?: string;
-      }>(
+      const res = await request<DraftResult>(
         `/api/topics/${encodeURIComponent(topicId)}/quiz/draft`,
         {
           baseRevision: workRevision.current,
@@ -136,26 +164,19 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
       if (res.kind === "saved" && res.workRevision !== undefined) {
         workRevision.current = res.workRevision;
         dirty.current = answersRef.current !== sentAnswers;
+        preserveLocal(data.learnerId, dirty.current ? { answers: answersRef.current, workRevision: res.workRevision } : null);
         setSaveStatus(dirty.current ? "Unsaved changes" : "Saved on server");
         if (dirty.current) setSaveVersion(version => version + 1);
         return !dirty.current;
       }
-      if (res.kind === "conflict" && res.conflictId) {
-        // Resolve choosing candidate
-        const resolved = await request<{ kind: string; workRevision: number }>(
-          `/api/topics/${encodeURIComponent(topicId)}/quiz/draft/resolve`,
-          {
-            conflictId: res.conflictId,
-            choice: "candidate",
-            baseRevision: workRevision.current,
-          },
-          "POST",
-        );
-        workRevision.current = resolved.workRevision;
-        dirty.current = answersRef.current !== sentAnswers;
-        setSaveStatus(dirty.current ? "Unsaved changes" : "Saved after resolving update");
-        if (dirty.current) setSaveVersion(version => version + 1);
-        return !dirty.current;
+      if (res.kind === "conflict") {
+        conflictRef.current = res;
+        setConflict(res);
+        answersRef.current = res.candidate.answers;
+        setAnswers(res.candidate.answers);
+        setConflictChanged(false);
+        setSaveStatus("Choose which draft to keep");
+        return false;
       }
       return false;
     } catch (err) {
@@ -167,10 +188,61 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
     }
   }, [data, topicId]);
 
+  const resolveConflict = async (choice: "server" | "candidate") => {
+    const current = conflictRef.current;
+    if (!current || saving.current) return;
+    saving.current = true;
+    setResolving(true);
+    setError("");
+    try {
+      const result = await request<DraftResult>(
+        `/api/topics/${encodeURIComponent(topicId)}/quiz/draft/resolve`,
+        { conflictId: current.conflictId, choice, baseRevision: current.server.workRevision },
+      );
+      if (result.kind === "conflict") {
+        conflictRef.current = result;
+        setConflict(result);
+        setConflictChanged(true);
+        return;
+      }
+      workRevision.current = result.workRevision;
+      const chosen = choice === 'server' ? current.server.answers : current.candidate.answers;
+      const local = pendingLocal.current;
+      if (local && JSON.stringify(local.answers) === JSON.stringify(current.candidate.answers)) {
+        preserveLocal(data!.learnerId, null);
+      }
+      let next = result.nextConflict ?? null;
+      // Preserve newer local edits as a competing draft rather than overwriting the chosen work.
+      if (!next && pendingLocal.current) {
+        const pending = pendingLocal.current;
+        const saved = await request<DraftResult>(`/api/topics/${encodeURIComponent(topicId)}/quiz/draft`, {
+          baseRevision: pending.workRevision, answers: pending.answers,
+        }, 'PUT');
+        if (saved.kind === 'conflict') next = saved;
+        else { workRevision.current = saved.workRevision; preserveLocal(data!.learnerId, null); }
+      }
+      await localWrites.current;
+      conflictRef.current = next;
+      setConflict(next);
+      const displayed = next?.candidate.answers ?? (pendingLocal.current?.answers ?? chosen);
+      answersRef.current = displayed;
+      setAnswers(displayed);
+      dirty.current = false;
+      setSaveStatus(next ? "Choose which draft to keep" : "Draft choice saved");
+    } catch (err) {
+      await load();
+      setError(err instanceof Error ? err.message : "Could not save your choice. Try again.");
+    } finally {
+      saving.current = false;
+      setResolving(false);
+    }
+  };
+
   const handleSelect = (questionId: string, choiceId: string) => {
     setError("");
     const updated = { ...answersRef.current, [questionId]: choiceId };
     answersRef.current = updated;
+    preserveLocal(data!.learnerId, { answers: updated, workRevision: workRevision.current });
     setAnswers(updated);
     dirty.current = true;
     setSaveStatus("Unsaved changes");
@@ -204,9 +276,7 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
 
     try {
       // First ensure latest draft is saved
-      if (dirty.current) {
-        await save();
-      }
+      if (conflictRef.current || (dirty.current && !(await save()))) return;
 
       const requestKey = `submit-quiz-${topicId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const result = await request<{
@@ -376,6 +446,27 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
           <div className="panel error" style={{ marginBottom: "1.5rem" }}>
             <p>{error}</p>
           </div>
+        )}
+
+        {conflict && (
+          <section className="panel notice" aria-labelledby="draft-conflict-heading">
+            <h2 id="draft-conflict-heading">Choose which answers to keep</h2>
+            <p>Another version of this draft was saved. Compare the answers and choose which version to use.</p>
+            {conflictChanged && <p role="status">The saved answers changed again. Review both versions and choose again.</p>}
+            {([
+              ["Saved answers", conflict.server.answers],
+              ["My answers", answers],
+            ] as const).map(([label, version]) => (
+              <div key={label}>
+                <h3>{label}</h3>
+                <ul>{questions.map(q => <li key={q.id}>{q.prompt}: {q.choices.find(c => c.id === version[q.id])?.text ?? "Unanswered"}</li>)}</ul>
+              </div>
+            ))}
+            <div className="actions">
+              <button type="button" disabled={resolving} onClick={() => void resolveConflict("server")}>Keep saved answers</button>
+              <button type="button" disabled={resolving} onClick={() => void resolveConflict("candidate")}>Keep my answers</button>
+            </div>
+          </section>
         )}
 
         {/* Post-submission score banner */}
@@ -577,6 +668,7 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
                         >
                           <input
                             type="radio"
+                            disabled={!!conflict}
                             name={`q-${q.id}`}
                             value={c.id}
                             checked={isChosen}
@@ -651,7 +743,7 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
               <button
                 type="button"
                 onClick={() => void save()}
-                disabled={saving.current || !dirty.current}
+                disabled={!!conflict || saving.current || !dirty.current}
               >
                 Save draft
               </button>
@@ -659,7 +751,7 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
                 type="button"
                 className="primary"
                 onClick={() => handleSubmit(false)}
-                disabled={submitting}
+                disabled={submitting || !!conflict}
               >
                 {submitting
                   ? "Evaluating answers…"
