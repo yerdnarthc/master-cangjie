@@ -212,6 +212,20 @@ now passes. This reduces the browser and quiz-API side of RISK-02. It does not
 establish worker restart, evaluator interruption, or full UC-16 coding-path
 recovery. RISK-02 remains In progress.
 
+**2026-11-02 quiz autosave timeout recovery verification:** The
+[verification record](development/quiz-autosave-timeout-recovery-verification.md)
+passes `npm run check`, 56 domain tests, 32 real-PostgreSQL integration tests
+(6 skipped), and 11 scoped Chromium autosave/conflict journeys, including a
+real lost-response replay and the identical stale-snapshot PostgreSQL contract.
+The full 51-journey suite was attempted but not completed: coding-draft and
+Hello World recovery journeys failed before the quiz journeys ran. The recovery
+fixtures still expect `/api/workspace` while the coding component uses the
+topic-specific coding route; the competing-tabs draft journey also restores the
+wrong tab's version after reload and needs separate diagnosis. These failures
+leave full coding-path verification open. This evidence reduces only the quiz
+browser/API portion of RISK-02; worker restart, evaluator interruption, and the
+full UC-16 coding path remain unverified. RISK-02 remains In progress.
+
 ## RISK-03: MVP effort is underestimated
 
 **Failure scenario:** The use-case list is treated as a collection of similarly sized tasks. Profile editing progresses quickly while offline drafts, conflicting edits, durable execution, verification, and historical assessment handling consume much more effort than expected.

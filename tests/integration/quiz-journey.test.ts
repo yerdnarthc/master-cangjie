@@ -56,6 +56,49 @@ it('restores and advances multiple conflicts without changing submitted history'
   expect((await quizSubmissions.workspace(actor, topic)).conflict).toBeNull();
 });
 
+it('acknowledges an identical stale quiz draft replay and accepts a newer snapshot', async () => {
+  const actor = await freshFixture(pool);
+  const topic = 'getting-started-with-cangjie';
+  const quiz = await readQuiz(topic);
+  const firstQuestion = quiz.questions[0];
+  const secondQuestion = quiz.questions[1];
+  const firstChoice = firstQuestion.choices[0];
+  const secondChoice = secondQuestion.choices[0];
+  const firstSnapshot = {
+    [firstQuestion.id]: firstChoice.id,
+  };
+
+  const firstSave = await quizSubmissions.saveDraft(actor, topic, {
+    baseRevision: 0,
+    answers: firstSnapshot,
+  });
+  expect(firstSave).toEqual({ kind: 'saved', workRevision: 1 });
+
+  const replay = await quizSubmissions.saveDraft(actor, topic, {
+    baseRevision: 0,
+    answers: firstSnapshot,
+  });
+  expect(replay).toEqual({ kind: 'saved', workRevision: 1 });
+  if (replay.kind !== 'saved') throw new Error('Expected identical replay to be acknowledged.');
+  const afterReplay = await quizSubmissions.workspace(actor, topic);
+  expect(afterReplay.conflict).toBeNull();
+  expect(afterReplay.draft).toEqual({ answers: firstSnapshot, workRevision: 1 });
+
+  const latestSnapshot = {
+    ...firstSnapshot,
+    [secondQuestion.id]: secondChoice.id,
+  };
+  const latestSave = await quizSubmissions.saveDraft(actor, topic, {
+    baseRevision: replay.workRevision,
+    answers: latestSnapshot,
+  });
+  expect(latestSave).toEqual({ kind: 'saved', workRevision: 2 });
+
+  const finalWorkspace = await quizSubmissions.workspace(actor, topic);
+  expect(finalWorkspace.conflict).toBeNull();
+  expect(finalWorkspace.draft).toEqual({ answers: latestSnapshot, workRevision: 2 });
+});
+
 it('tests the complete multiple-choice workflow: draft, submit, retry retention, and explicit completion unlocking next topic', async () => {
   const actor = await freshFixture(pool);
   const topic1 = 'getting-started-with-cangjie';
