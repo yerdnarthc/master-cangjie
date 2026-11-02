@@ -35,18 +35,21 @@ test("recovers newer edits across reload and presents them after the earlier con
     saves++;
     const body = route.request().postDataJSON();
     if (saves === 1) {
-      conflict = { kind: "conflict", conflictId: "first", server, candidate };
+      const firstResponse = { kind: "conflict" as const, conflictId: "first", server, candidate };
+      conflict = firstResponse;
       await held;
-    } else {
-      expect(body.answers).toEqual({ q0: "a", q1: "b" });
-      conflict = {
-        kind: "conflict",
-        conflictId: "newer",
-        server: { ...server, workRevision: 2 },
-        candidate: { answers: body.answers, workRevision: body.baseRevision },
-      };
+      await route.fulfill({ json: firstResponse });
+      return;
     }
-    await route.fulfill({ json: conflict });
+    expect(body.answers).toEqual({ q0: "a", q1: "b" });
+    const newerResponse = {
+      kind: "conflict" as const,
+      conflictId: "newer",
+      server: { ...server, workRevision: 2 },
+      candidate: { answers: body.answers, workRevision: body.baseRevision },
+    };
+    conflict = newerResponse;
+    await route.fulfill({ json: newerResponse });
   });
   await page.route("**/api/topics/*/quiz/draft/resolve", async (route) => {
     resolutions++;
@@ -59,11 +62,15 @@ test("recovers newer edits across reload and presents them after the earlier con
       },
     });
   });
+  await page.clock.install();
   await page.goto("/topics/getting-started-with-cangjie/activity");
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 60_000));
   try {
     await page.locator('input[name="q-q0"][value="a"]').check();
+    await page.clock.fastForward(1500);
     await expect.poll(() => saves).toBe(1);
     await page.locator('input[name="q-q1"][value="b"]').check();
+    await page.clock.fastForward(1500);
   } finally {
     release();
   }

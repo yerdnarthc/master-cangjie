@@ -9,7 +9,7 @@ import type {
 import { lessonFor } from "../../../../modules/roadmap/application/onboarding.ts";
 import type { QuizEvaluation } from "../../../../modules/topic-submission/domain/quiz-evaluation.ts";
 import type { Score } from "../../../../modules/topic-submission/domain/evaluation.ts";
-import { quizDrafts, quizSubmissionRequests, type PendingQuizSubmission, type QuizDraftSnapshot, type QuizSubmissionRequest } from "../../../../modules/activity-draft/adapters/browser-drafts.ts";
+import { quizDrafts, quizSubmissionRequests, type PendingQuizSubmission, type QuizDraftSnapshot, type QuizLocalDraft, type QuizSubmissionRequest } from "../../../../modules/activity-draft/adapters/browser-drafts.ts";
 
 type QuizWorkspaceData = {
   learnerId: string;
@@ -74,6 +74,14 @@ class RequestError extends Error {
   }
 }
 
+function isRetryableDraftFailure(error: unknown): boolean {
+  if (error instanceof RequestError) {
+    return error.status === 408 || error.status === 429 || error.status >= 500;
+  }
+  return error instanceof Error &&
+    (error.name === "AbortError" || error instanceof TypeError);
+}
+
 async function request<T>(
   url: string,
   body?: unknown,
@@ -129,6 +137,9 @@ function sameAnswers(first: Record<string, string>, second: Record<string, strin
   return keys.length === Object.keys(second).length && keys.every(key => Object.hasOwn(second, key) && first[key] === second[key]);
 }
 
+const RETRY_DELAYS_MS = [1000, 2000, 4000] as const;
+const STORAGE_WARNING = "Browser storage is unavailable. Keep this page open until your answers are saved.";
+
 export default function QuizWorkspace({ topicId }: { topicId: string }) {
   const [data, setData] = useState<QuizWorkspaceData | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -145,12 +156,19 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
   const [conflict, setConflict] = useState<Extract<DraftResult, { kind: "conflict" }> | null>(null);
   const [resolving, setResolving] = useState(false);
   const [conflictChanged, setConflictChanged] = useState(false);
+  const [hasPendingDraftSave, setHasPendingDraftSave] = useState(false);
+  const [storageWarning, setStorageWarning] = useState("");
 
   const workRevision = useRef<number>(0);
   const answersRef = useRef<Record<string, string>>({});
   const dirty = useRef<boolean>(false);
   const saving = useRef<boolean>(false);
   const draftSaveSettled = useRef<Promise<void> | null>(null);
+  const pendingSnapshot = useRef<QuizDraftSnapshot | null>(null);
+  const automaticRetries = useRef(0);
+  const automaticRetryBlock = useRef<"exhausted" | "terminal" | null>(null);
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveAction = useRef<((manual?: boolean) => Promise<boolean>) | null>(null);
   const submissionInFlight = useRef(false);
   const pendingSubmissionRef = useRef<PendingQuizSubmission | null>(null);
   const conflictRef = useRef<Extract<DraftResult, { kind: "conflict" }> | null>(null);
@@ -174,17 +192,25 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
         dirty: !!snapshot,
       },
     ));
-    void operation.catch(() => setError("Browser storage is unavailable. Keep this page open until your answers are saved."));
+    void operation.catch(() => setStorageWarning(STORAGE_WARNING));
   };
   const clearLocal = (learnerId: string): Promise<void> => {
     pendingLocal.current = null;
+    pendingSnapshot.current = null;
+    setHasPendingDraftSave(false);
+    automaticRetries.current = 0;
+    automaticRetryBlock.current = null;
+    if (retryTimer.current) clearTimeout(retryTimer.current);
+    retryTimer.current = null;
     const operation = queueLocalWrite(() => quizDrafts.clear(learnerId, topicId, localTabId.current));
-    void operation.catch(() => setError("Browser storage is unavailable. Keep this page open until your answers are saved."));
+    void operation.catch(() => setStorageWarning(STORAGE_WARNING));
     return operation;
   };
 
   const load = useCallback(async () => {
     setError("");
+    setStorageWarning("");
+    automaticRetryBlock.current = null;
     try {
       const ws = await request<QuizWorkspaceData>(
         `/api/topics/${encodeURIComponent(topicId)}/quiz`,
@@ -193,8 +219,22 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
       if (!tabId) { tabId = crypto.randomUUID(); sessionStorage.setItem('mcj-quiz-tab', tabId); }
       localTabId.current = tabId;
       await localWrites.current.catch(() => {});
-      const local = ws.learnerId ? await quizDrafts.read(ws.learnerId, topicId, tabId) : undefined;
-      const pending = ws.learnerId ? await quizSubmissionRequests.read(ws.learnerId, topicId) : null;
+      let local: QuizLocalDraft | undefined;
+      let pending: PendingQuizSubmission | null = null;
+      if (ws.learnerId) {
+        try {
+          local = await quizDrafts.read(ws.learnerId, topicId, tabId);
+        } catch {
+          setStorageWarning(STORAGE_WARNING);
+        }
+        try {
+          pending = await quizSubmissionRequests.read(ws.learnerId, topicId);
+        } catch {
+          setStorageWarning(STORAGE_WARNING);
+        }
+      }
+      pendingSnapshot.current = local?.pendingSave ?? null;
+      setHasPendingDraftSave(!!pendingSnapshot.current);
       pendingLocal.current = local?.dirty ? { answers: local.answers, workRevision: local.baseRevision } : null;
       pendingSubmissionRef.current = pending;
       setPendingSubmission(pending);
@@ -229,7 +269,14 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
     void load();
   }, [load]);
 
-  const save = useCallback(async (): Promise<boolean> => {
+  const save = useCallback(async (manual = false): Promise<boolean> => {
+    if (manual) {
+      if (retryTimer.current) clearTimeout(retryTimer.current);
+      retryTimer.current = null;
+      automaticRetries.current = 0;
+      automaticRetryBlock.current = null;
+    }
+    if (!manual && automaticRetryBlock.current) return false;
     if (saving.current || conflictRef.current || submissionInFlight.current || pendingSubmissionRef.current || !dirty.current || !data) return false;
     saving.current = true;
     let settle!: () => void;
@@ -244,7 +291,15 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
         quizDrafts.beginSave(data.learnerId, topicId, localTabId.current, proposed),
       );
       localWrites.current = beginSave;
-      const sentSnapshot = await beginSave;
+      let sentSnapshot: QuizDraftSnapshot;
+      try {
+        sentSnapshot = await beginSave;
+      } catch {
+        setStorageWarning(STORAGE_WARNING);
+        sentSnapshot = pendingSnapshot.current ?? proposed;
+      }
+      pendingSnapshot.current = sentSnapshot;
+      setHasPendingDraftSave(true);
       const res = await timedRequest<DraftResult>(
         `/api/topics/${encodeURIComponent(topicId)}/quiz/draft`,
         {
@@ -264,7 +319,18 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
           quizDrafts.acknowledge(data.learnerId, topicId, localTabId.current, sentSnapshot, res.workRevision),
         );
         localWrites.current = acknowledge;
-        const latest = await acknowledge;
+        let latest;
+        try {
+          latest = await acknowledge;
+        } catch {
+          setStorageWarning(STORAGE_WARNING);
+        }
+        if (retryTimer.current) clearTimeout(retryTimer.current);
+        retryTimer.current = null;
+        automaticRetries.current = 0;
+        automaticRetryBlock.current = null;
+        pendingSnapshot.current = latest?.pendingSave ?? null;
+        setHasPendingDraftSave(!!pendingSnapshot.current);
         dirty.current = !sameAnswers(answersRef.current, sentSnapshot.answers) ||
           !!latest?.dirty || !!latest?.pendingSave;
         pendingLocal.current = dirty.current
@@ -279,7 +345,17 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
           quizDrafts.clearPending(data.learnerId, topicId, localTabId.current, sentSnapshot),
         );
         localWrites.current = clearPending;
-        await clearPending;
+        try {
+          await clearPending;
+        } catch {
+          setStorageWarning(STORAGE_WARNING);
+        }
+        if (retryTimer.current) clearTimeout(retryTimer.current);
+        retryTimer.current = null;
+        automaticRetries.current = 0;
+        automaticRetryBlock.current = null;
+        pendingSnapshot.current = null;
+        setHasPendingDraftSave(false);
         conflictRef.current = res;
         setConflict(res);
         answersRef.current = res.candidate.answers;
@@ -290,9 +366,22 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
       }
       return false;
     } catch (err) {
-      setSaveStatus("Failed to save draft");
+      const timedOut = err instanceof Error && err.name === "AbortError";
+      if (err instanceof RequestError && err.status === 401) setUnauthorized(true);
+      if (isRetryableDraftFailure(err) && automaticRetries.current < RETRY_DELAYS_MS.length) {
+        const delay = RETRY_DELAYS_MS[automaticRetries.current];
+        automaticRetries.current += 1;
+        setSaveStatus("Retrying draft save…");
+        retryTimer.current = setTimeout(() => {
+          retryTimer.current = null;
+          void saveAction.current?.();
+        }, delay);
+      } else {
+        automaticRetryBlock.current = isRetryableDraftFailure(err) ? "exhausted" : "terminal";
+        setSaveStatus("Failed to save draft");
+      }
       setError(
-        err instanceof Error && err.name === "AbortError"
+        timedOut
           ? "Draft save timed out. Try again."
           : err instanceof Error ? err.message : "Failed to save draft.",
       );
@@ -303,6 +392,26 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
       draftSaveSettled.current = null;
     }
   }, [data, topicId]);
+
+  saveAction.current = save;
+
+  useEffect(() => () => {
+    if (retryTimer.current) clearTimeout(retryTimer.current);
+  }, []);
+
+  useEffect(() => {
+    if (!hasPendingDraftSave) return;
+    const retryWhenOnline = () => {
+      if (saving.current) return;
+      if (automaticRetryBlock.current === "terminal") return;
+      if (retryTimer.current) clearTimeout(retryTimer.current);
+      retryTimer.current = null;
+      automaticRetryBlock.current = null;
+      void save();
+    };
+    window.addEventListener("online", retryWhenOnline);
+    return () => window.removeEventListener("online", retryWhenOnline);
+  }, [hasPendingDraftSave, save]);
 
   const resolveConflict = async (choice: "server" | "candidate") => {
     const current = conflictRef.current;
@@ -368,7 +477,7 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
   // Debounced auto-save on answer change
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (dirty.current) {
+      if (dirty.current && !automaticRetryBlock.current) {
         void save();
       }
     }, 1500);
@@ -947,12 +1056,13 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
               >
                 {saveStatus}
               </p>
+              {storageWarning && <p role="status">{storageWarning}</p>}
             </div>
 
             <div className="actions">
               <button
                 type="button"
-                onClick={() => void save()}
+                onClick={() => void save(true)}
                 disabled={!!conflict || submitting || !!pendingSubmission || saving.current || !dirty.current}
               >
                 Save draft
