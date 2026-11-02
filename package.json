@@ -18,6 +18,7 @@
     "test:journeys": "playwright test",
     "db:migrate": "tsx infrastructure/persistence/migrate.ts",
     "db:seed:milestone": "tsx infrastructure/persistence/seed-milestone.ts",
+    "db:reset:dev": "node --experimental-transform-types tools/development/reset-local-learner.ts",
     "dev:jobs": "tsx apps/application-jobs/src/main.ts",
     "dev:worker": "tsx apps/evaluation-worker/src/main.ts",
     "db:roles": "tsx infrastructure/persistence/setup-roles.ts",

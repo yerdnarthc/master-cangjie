@@ -146,3 +146,13 @@ Select **Open Hello World activity** to reach the unchanged assessment workflow
 at `/topics/running-the-first-cangjie-program/activity`. The activity provides a
 **Back to lesson** link. Saved work and operation APIs keep their existing keys;
 lesson navigation does not create assessment attempts or progress.
+
+## Reset local learner state for QA
+
+Use this to return the fixed development learner to the first onboarding topic and clear their saved server-side quiz and coding work. Run it from the repository root with Node 24.
+
+1. While the app is running, open a non-activity page on each origin you use (for example, `http://localhost:3000` and `http://127.0.0.1:3000`). In DevTools > Application > IndexedDB, delete `master-cangjie-work` for each origin. If the browser reports that deletion is blocked, close the other tabs for that origin and retry. Cookies and the development session can remain. Doing this before stopping the app lets DevTools inspect the origin and prevents an activity from restoring an old local draft after the server reset.
+2. Close the app's browser tabs. Stop `npm run dev:web`, `npm run dev:jobs`, and `npm run dev:worker` with `Ctrl+C` in their terminals so no process creates or handles work during the reset.
+3. Run `npm run db:reset:dev`. In Windows PowerShell, use `npm.cmd run db:reset:dev` if the `npm.ps1` execution policy blocks the command.
+4. Check that the prompt names `127.0.0.1:15432/mcj_hello` and the development learner ID, then type `reset`. The command rejects test/remote databases and non-interactive terminals. It preserves learner accounts, topic content, assessment revisions, and other learners.
+5. Restart the processes and reopen the app. The first onboarding topic should be available, with the development learner's quiz and coding activity reset. If you skipped the browser-storage step, start the app and open a non-activity page, clear `master-cangjie-work` for each origin in DevTools, then open activities.
