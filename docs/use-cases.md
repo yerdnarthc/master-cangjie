@@ -80,7 +80,7 @@ The product evaluates work, records results, and applies progression as part of 
 
 These rules apply wherever the corresponding behavior occurs, even when a use case does not repeat them in full.
 
-1. **Access:** Learner operations require the learner's Google-authenticated account and an unlocked topic where applicable. A direct link does not bypass prerequisites. Only that learner's work and progress are restored or changed.
+1. **Access:** Learner operations require the learner's Google-authenticated account and an unlocked topic where applicable. Before a topic is unlocked, a learner may see its roadmap title, status, and prerequisite guidance, but a direct link cannot expose its lessons, summaries, or activity. Only that learner's work and progress are restored or changed.
 2. **Learning order:** Follow the exact topic order in the product's MVP roadmap, within and across categories. Categories have no separate assessment. Only the first onboarding topic is initially unlocked. Completing the last topic finishes the path without unlocking an additional topic.
 3. **Coding scores:** Every passed test earns 10 points, including hidden tests. Individual runs award no points. Batch results apply to the code version evaluated. Topic percentages use all possible test points, including those belonging to unattempted problems.
 4. **Multiple-choice scores:** Every activity has exactly ten questions with one correct answer each. Correct answers earn 10 points; incorrect and unanswered questions earn zero. A score of at least 60/100 passes.
@@ -188,7 +188,7 @@ These rules apply wherever the corresponding behavior occurs, even when a use ca
 2. Show recorded best scores, the previous learning location, and the next available action where applicable.
 3. Let the learner open an unlocked topic through UC-05 or resume through UC-16.
 
-**Alternatives and failures:** A locked topic explains its prerequisite instead of opening its activity. A new learner is directed to onboarding. After the last topic, show path completion without inventing another prerequisite or topic.
+**Alternatives and failures:** A locked topic explains its prerequisite without opening its lessons, summaries, or activity. A new learner is directed to onboarding. After the last topic, show path completion without inventing another prerequisite or topic.
 
 **Successful outcome:** The learner can distinguish what is completed, available, awaiting "Mark complete," and locked.
 
@@ -211,7 +211,7 @@ These rules apply wherever the corresponding behavior occurs, even when a use ca
 2. Let the learner read the material and open coding problems through UC-06 or the multiple-choice activity through UC-12.
 3. Update the learner's resume location.
 
-**Alternatives and failures:** A direct link to a locked topic is denied with prerequisite guidance. After onboarding, opening or reading lessons is not required before starting the activity. Reading alone never awards a passing score or unlock.
+**Alternatives and failures:** A direct link to a locked topic is denied before any lesson, summary, or activity content is shown, with prerequisite guidance. Once a topic is unlocked, opening or reading its lessons is not required before starting its activity. Reading alone never awards a passing score or unlock.
 
 **Successful outcome:** The learner accesses appropriate material and the correct activity for the topic.
 

@@ -399,7 +399,10 @@ the Cangjie Toolchain, and Running the First Cangjie Program. Shared topic pages
 present lessons and summaries before their activity section; the existing Hello
 World workspace is linked at `/topics/running-the-first-cangjie-program/activity`.
 The first two quizzes are explicitly unavailable. These are public lesson previews
-in the internal build, not evidence of earned topic access or complete UC-05
-onboarding/progression/resume behavior. RISK-04 remains open: quiz authoring,
-maintainer content approval and learner validation still require evidence.
+in the current internal build, which conflicts with the approved locked-topic rule:
+learners must not see a locked topic's lessons, summaries, or activity before
+completing its prerequisite. Treat this as an open UC-04/UC-05 access-enforcement
+gap, not an approved preview exception or evidence of earned topic access. RISK-04
+remains open: quiz authoring, maintainer content approval and learner validation
+still require evidence.
 See `content/lessons/README.md` for source/version scope and content ownership.
