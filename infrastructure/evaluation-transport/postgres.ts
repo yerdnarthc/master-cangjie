@@ -1,7 +1,7 @@
 import type pg from 'pg';
 import { transaction } from '../persistence/connection.ts';
 import { PgBoss } from 'pg-boss';
-import { assessmentFor } from '../../modules/roadmap/application/content.ts';
+import { assessmentFor, problemFromAssessment } from '../../modules/roadmap/application/content.ts';
 import { PostgresSubmissions, InvalidExecutionEvidence, hash } from '../../modules/topic-submission/adapters/postgres.ts';
 import type { ExecutionPayload, ExecutionOutcome } from './contracts.ts';
 
@@ -11,8 +11,9 @@ export async function dispatch(pool:pg.Pool,boss:PgBoss) {
     AND (j.lease_until IS NULL OR j.lease_until<=now()) AND (d.notified_at IS NULL OR d.notified_at<now()-interval '10 seconds') LIMIT 20`)).rows;
   for(const e of rows) {
     const a=await assessmentFor(pool,e.context.assessment.topicId,e.context.assessment.revision);
+    const prob=problemFromAssessment(a,e.context.problemId);
     const payload:ExecutionPayload={contractVersion:1,requestId:e.id,source:e.context.source,sourceHash:hash(e.context.source),assessment:e.context.assessment,caseIds:e.context.caseIds,
-      languageVersion:'1.0.5',cases:a.tests.filter(t=>e.context.caseIds.includes(t.id)).map(t=>({id:t.id,inputBase64:t.inputBase64}))};
+      languageVersion:'1.0.5',cases:prob.tests.filter(t=>e.context.caseIds.includes(t.id)).map(t=>({id:t.id,inputBase64:t.inputBase64}))};
     const inserted=await transaction(pool,async c=>{
       const current=(await c.query('SELECT state FROM evaluation_attempts WHERE id=$1 FOR UPDATE',[e.id])).rows[0];
       if(current?.state!=='pending')return false;

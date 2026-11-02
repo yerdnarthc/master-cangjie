@@ -6,7 +6,7 @@ test.beforeEach(async () => { await resetMilestone(); });
 const correct = 'main(): Int64 {\n    println("Hello, World!")\n    return 0\n}\n';
 
 test('untouched starter is reviewed as unattempted and needs zero-point acknowledgement', async ({ page }) => {
-  await page.goto('/topics/running-the-first-cangjie-program');
+  await page.goto('/topics/running-the-first-cangjie-program/activity');
   const login = page.getByRole('button', { name: 'Open development workspace' });
   await expect(login.or(page.getByRole('heading', { name: 'Hello, World!', exact: true }))).toBeVisible();
   if (await login.isVisible()) await login.click();
@@ -27,7 +27,7 @@ test('untouched starter is reviewed as unattempted and needs zero-point acknowle
 });
 
 test('run, validate, submit and restore the retained completion', async ({ page }) => {
-  await page.goto('/topics/running-the-first-cangjie-program');
+  await page.goto('/topics/running-the-first-cangjie-program/activity');
   const login = page.getByRole('button', { name: 'Open development workspace' });
   await expect(login.or(page.getByRole('heading', { name: 'Hello, World!', exact: true }))).toBeVisible();
   if (await login.isVisible()) await login.click();
@@ -78,7 +78,7 @@ test('run, validate, submit and restore the retained completion', async ({ page 
 });
 
 test('a formatting mismatch is explained and does not erase prior progress', async ({ page }) => {
-  await page.goto('/topics/running-the-first-cangjie-program');
+  await page.goto('/topics/running-the-first-cangjie-program/activity');
   const login = page.getByRole('button', { name: 'Open development workspace' });
   await expect(login.or(page.getByRole('heading', { name: 'Hello, World!', exact: true }))).toBeVisible();
   if (await login.isVisible()) await login.click();

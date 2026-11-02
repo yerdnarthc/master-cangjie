@@ -1,0 +1,217 @@
+{
+  "topicId": "getting-started-with-cangjie",
+  "revision": 1,
+  "title": "Getting Started with Cangjie",
+  "questions": [
+    {
+      "id": "q01",
+      "prompt": "What type of programming language is Cangjie?",
+      "choices": [
+        {
+          "id": "a",
+          "text": "A domain-specific query language designed only for databases."
+        },
+        {
+          "id": "b",
+          "text": "A general-purpose language supporting imperative, functional, and object-oriented programming."
+        },
+        {
+          "id": "c",
+          "text": "A purely functional scripting language that disallows variables and functions."
+        },
+        {
+          "id": "d",
+          "text": "An assembly language executed directly by hardware without a compiler."
+        }
+      ],
+      "correctChoiceId": "b",
+      "explanation": "Cangjie is a general-purpose programming language. You can write step-by-step commands (imperative), build programs around functions (functional), or structure them into objects."
+    },
+    {
+      "id": "q02",
+      "prompt": "What does it mean that Cangjie is \"statically typed\"?",
+      "choices": [
+        {
+          "id": "a",
+          "text": "Cangjie checks data types during compilation before the program runs."
+        },
+        {
+          "id": "b",
+          "text": "Variable types can only be verified while the program is executing in a terminal."
+        },
+        {
+          "id": "c",
+          "text": "Every variable must always have an explicit type written manually by the programmer."
+        },
+        {
+          "id": "d",
+          "text": "Variables are converted into strings before every function call."
+        }
+      ],
+      "correctChoiceId": "a",
+      "explanation": "In statically typed languages like Cangjie, type compatibility is verified by the compiler during build time, catching type errors before you run the code."
+    },
+    {
+      "id": "q03",
+      "prompt": "How does type inference help you when writing Cangjie code?",
+      "choices": [
+        {
+          "id": "a",
+          "text": "It prevents the compiler from checking types entirely."
+        },
+        {
+          "id": "b",
+          "text": "It automatically fixes syntax errors in your source code."
+        },
+        {
+          "id": "c",
+          "text": "It allows the compiler to deduce certain types so you do not always have to write explicit annotations."
+        },
+        {
+          "id": "d",
+          "text": "It converts all numbers into integers at runtime."
+        }
+      ],
+      "correctChoiceId": "c",
+      "explanation": "Type inference means the compiler deduces the appropriate type from the values you assign, saving you from writing redundant type annotations for every variable."
+    },
+    {
+      "id": "q04",
+      "prompt": "Which file extension is used for Cangjie source code files?",
+      "choices": [
+        { "id": "a", "text": ".c" },
+        { "id": "b", "text": ".cj" },
+        { "id": "c", "text": ".cjc" },
+        { "id": "d", "text": ".exe" }
+      ],
+      "correctChoiceId": "b",
+      "explanation": "Cangjie source files use the .cj extension. The compiler cjc reads these text files to generate executables."
+    },
+    {
+      "id": "q05",
+      "prompt": "What is the primary role of the Cangjie compiler, cjc?",
+      "choices": [
+        { "id": "a", "text": "To edit and format your source text files." },
+        {
+          "id": "b",
+          "text": "To turn source code text into an executable binary that your computer can run."
+        },
+        {
+          "id": "c",
+          "text": "To display the standard output in your terminal window."
+        },
+        { "id": "d", "text": "To host a web server for browser activities." }
+      ],
+      "correctChoiceId": "b",
+      "explanation": "The compiler takes the source code you wrote in a .cj file, performs syntax and type checks, and compiles it into an executable binary program."
+    },
+    {
+      "id": "q06",
+      "prompt": "If your Cangjie program compiles without any errors, what does that guarantee?",
+      "choices": [
+        {
+          "id": "a",
+          "text": "It guarantees the program does exactly what you intended and requires no testing."
+        },
+        {
+          "id": "b",
+          "text": "It guarantees the code passed compile-time checks, but you still need to run it to observe its runtime behavior."
+        },
+        {
+          "id": "c",
+          "text": "It guarantees the program has already executed and completed inside the compiler."
+        },
+        {
+          "id": "d",
+          "text": "It guarantees the program prints output to the terminal automatically."
+        }
+      ],
+      "correctChoiceId": "b",
+      "explanation": "Successful compilation means the code is syntactically valid and satisfies Cangjie's type rules. Running the executable is the next step to verify whether its output matches what you wanted."
+    },
+    {
+      "id": "q07",
+      "prompt": "What is the distinct responsibility of the editor, the compiler, and the terminal in local development?",
+      "choices": [
+        {
+          "id": "a",
+          "text": "The editor runs the program, the compiler prints output, and the terminal writes code."
+        },
+        {
+          "id": "b",
+          "text": "The editor compiles code, the terminal checks types, and the compiler edits text."
+        },
+        {
+          "id": "c",
+          "text": "You write instructions in the editor, cjc builds the executable, and you run the program in the terminal."
+        },
+        {
+          "id": "d",
+          "text": "The terminal compiles the code, and the editor executes it."
+        }
+      ],
+      "correctChoiceId": "c",
+      "explanation": "Keep these roles separated: the editor is where you write text, the compiler creates the runnable program, and the terminal is where you launch the executable and view output."
+    },
+    {
+      "id": "q08",
+      "prompt": "Which Cangjie toolchain version is pinned and used by the MasterCangjie platform?",
+      "choices": [
+        { "id": "a", "text": "Cangjie 0.1.0 Beta" },
+        { "id": "b", "text": "Cangjie 1.0.5 LTS" },
+        { "id": "c", "text": "Cangjie 2.0.0 Nightly" },
+        { "id": "d", "text": "Cangjie 1.2.0 Community" }
+      ],
+      "correctChoiceId": "b",
+      "explanation": "MasterCangjie uses Cangjie 1.0.5 LTS for exercises and evaluation, ensuring your code runs against a stable, pinned long-term support release."
+    },
+    {
+      "id": "q09",
+      "prompt": "How does practicing in the MasterCangjie browser editor relate to installing the local toolchain?",
+      "choices": [
+        {
+          "id": "a",
+          "text": "You can practice in the browser without installing anything locally, but learning local setup gives you another environment to build programs independently."
+        },
+        {
+          "id": "b",
+          "text": "You must install the local toolchain before the browser editor can run any code."
+        },
+        {
+          "id": "c",
+          "text": "The browser editor connects directly to your local computer's cjc compiler."
+        },
+        {
+          "id": "d",
+          "text": "Running code in the browser will modify your computer's local system files."
+        }
+      ],
+      "correctChoiceId": "a",
+      "explanation": "The website evaluates code in an isolated sandbox on the server using Cangjie 1.0.5 without requiring local setup. Preparing local tools is encouraged so you can write and run programs offline on your own machine."
+    },
+    {
+      "id": "q10",
+      "prompt": "Does simply reading a lesson handout or summary complete a topic on MasterCangjie?",
+      "choices": [
+        {
+          "id": "a",
+          "text": "Yes, scrolling through the lesson automatically completes the topic."
+        },
+        {
+          "id": "b",
+          "text": "Yes, opening the page unlocks all subsequent roadmap topics."
+        },
+        {
+          "id": "c",
+          "text": "No, reading introduces concepts, but completing a topic requires passing its assessment and meeting completion requirements."
+        },
+        {
+          "id": "d",
+          "text": "No, you must install the local compiler before a lesson can be read."
+        }
+      ],
+      "correctChoiceId": "c",
+      "explanation": "Reading provides the foundational knowledge, but topic completion always requires completing the topic's assessment (passing the multiple-choice quiz and choosing \"Mark complete\", or submitting a passing coding solution)."
+    }
+  ]
+}

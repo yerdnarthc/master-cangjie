@@ -1,0 +1,178 @@
+{
+  "topicId": "installing-the-cangjie-toolchain",
+  "revision": 1,
+  "title": "Installing the Cangjie Toolchain",
+  "questions": [
+    {
+      "id": "q01",
+      "prompt": "Which Cangjie SDK version should you choose to match the MasterCangjie learning platform?",
+      "choices": [
+        { "id": "a", "text": "Cangjie 0.5.3 Beta" },
+        { "id": "b", "text": "Cangjie 1.0.5 LTS" },
+        {
+          "id": "c",
+          "text": "The newest nightly release regardless of version"
+        },
+        { "id": "d", "text": "Any version higher than 2.0.0" }
+      ],
+      "correctChoiceId": "b",
+      "explanation": "Choose Cangjie 1.0.5 LTS. This long-term support release matches the version used for exercises and tests on MasterCangjie."
+    },
+    {
+      "id": "q02",
+      "prompt": "When downloading the Cangjie SDK package, what two system attributes must you match?",
+      "choices": [
+        {
+          "id": "a",
+          "text": "Your operating system and processor architecture."
+        },
+        { "id": "b", "text": "Your monitor resolution and keyboard layout." },
+        { "id": "c", "text": "Your internet browser version and shell theme." },
+        { "id": "d", "text": "Your cloud provider and storage disk type." }
+      ],
+      "correctChoiceId": "a",
+      "explanation": "Download packages are compiled for specific platforms. Make sure to select the package built for your operating system (e.g., Windows, Linux) and processor architecture (e.g., x86_64, aarch64)."
+    },
+    {
+      "id": "q03",
+      "prompt": "Does installing a code editor extension (such as in VS Code) install the Cangjie SDK on your machine?",
+      "choices": [
+        {
+          "id": "a",
+          "text": "Yes, installing any editor extension automatically downloads the full compiler and runtime."
+        },
+        {
+          "id": "b",
+          "text": "No, an extension provides editor assistance like syntax highlighting, but you still need to download and install the SDK toolchain."
+        },
+        {
+          "id": "c",
+          "text": "Yes, the extension replaces the compiler entirely."
+        },
+        {
+          "id": "d",
+          "text": "No, editor extensions prevent the terminal compiler from working."
+        }
+      ],
+      "correctChoiceId": "b",
+      "explanation": "An editor extension provides conveniences like syntax highlighting and autocompletion, but it does not install the compiler tools. You still need to download and unpack the SDK."
+    },
+    {
+      "id": "q04",
+      "prompt": "In Windows PowerShell, how do you load the Cangjie environment script from your extracted SDK?",
+      "choices": [
+        {
+          "id": "a",
+          "text": "Run . C:/path/to/cangjie/envsetup.ps1 with a leading dot and space."
+        },
+        {
+          "id": "b",
+          "text": "Double-click the envsetup.ps1 file in File Explorer."
+        },
+        { "id": "c", "text": "Rename envsetup.ps1 to cjc.exe." },
+        { "id": "d", "text": "Type run envsetup.ps1 without any path." }
+      ],
+      "correctChoiceId": "a",
+      "explanation": "In PowerShell, dot-sourcing with . <path-to-script> executes the script in the current shell session, setting the environment variables required for cjc to be recognized."
+    },
+    {
+      "id": "q05",
+      "prompt": "On Linux or macOS, which command loads the toolchain environment in your current shell session?",
+      "choices": [
+        { "id": "a", "text": "cjc install" },
+        { "id": "b", "text": "source /path/to/cangjie/envsetup.sh" },
+        { "id": "c", "text": "chmod 777 cjc" },
+        { "id": "d", "text": "cat envsetup.sh" }
+      ],
+      "correctChoiceId": "b",
+      "explanation": "Use source /path/to/cangjie/envsetup.sh to export the toolchain's binary paths and environment variables into your active terminal shell."
+    },
+    {
+      "id": "q06",
+      "prompt": "If you set up the Cangjie environment in one terminal window and then open a brand-new terminal window, what happens?",
+      "choices": [
+        {
+          "id": "a",
+          "text": "All new terminal windows automatically share the same environment forever."
+        },
+        {
+          "id": "b",
+          "text": "The new terminal cannot find cjc unless you run the setup script there too or configure your shell to load it automatically."
+        },
+        { "id": "c", "text": "The SDK files on your hard drive are deleted." },
+        { "id": "d", "text": "The compiler runs faster in the new window." }
+      ],
+      "correctChoiceId": "b",
+      "explanation": "Environment script variables apply only to the terminal process where they were loaded. New terminal windows require running the setup script again unless configured in your shell startup file."
+    },
+    {
+      "id": "q07",
+      "prompt": "Which command checks that your terminal can locate the Cangjie compiler and reports its installed version?",
+      "choices": [
+        { "id": "a", "text": "cjc -v" },
+        { "id": "b", "text": "cjc --run" },
+        { "id": "c", "text": "cjc new hello" },
+        { "id": "d", "text": "cangjie start" }
+      ],
+      "correctChoiceId": "a",
+      "explanation": "Running cjc -v asks the compiler for its version. You should see 1.0.5 in the output to confirm it is ready for use."
+    },
+    {
+      "id": "q08",
+      "prompt": "If running cjc -v reports that cjc is not recognized or cannot be found, what is the best first step?",
+      "choices": [
+        { "id": "a", "text": "Reinstall your entire operating system." },
+        {
+          "id": "b",
+          "text": "Check the SDK folder path and load the environment setup script (envsetup) again in that terminal."
+        },
+        { "id": "c", "text": "Change the .cj file extension to .txt." },
+        { "id": "d", "text": "Submit an unattempted topic submission." }
+      ],
+      "correctChoiceId": "b",
+      "explanation": "\"Command not found\" typically means your terminal's PATH variable does not include the SDK's bin folder. Verify where you extracted the SDK and re-run the setup script in that terminal."
+    },
+    {
+      "id": "q09",
+      "prompt": "What should you do if cjc -v prints a different version number than 1.0.5?",
+      "choices": [
+        {
+          "id": "a",
+          "text": "Proceed immediately, as compiler versions never affect language features or behavior."
+        },
+        {
+          "id": "b",
+          "text": "Check which SDK path your terminal is using and ensure your environment is pointing to the 1.0.5 LTS installation."
+        },
+        {
+          "id": "c",
+          "text": "Edit the compiler binary with a text editor to change the displayed number."
+        },
+        { "id": "d", "text": "Delete your source code files." }
+      ],
+      "correctChoiceId": "b",
+      "explanation": "If a different version appears, an older or alternative installation is taking precedence in your PATH. Check your paths and point your shell to the Cangjie 1.0.5 LTS SDK directory."
+    },
+    {
+      "id": "q10",
+      "prompt": "If you upgrade or modify your local compiler on your laptop, does that change the compiler used by MasterCangjie when running web exercises?",
+      "choices": [
+        {
+          "id": "a",
+          "text": "Yes, the website uses your computer's local cjc compiler across the internet."
+        },
+        {
+          "id": "b",
+          "text": "No, MasterCangjie evaluates browser code in an isolated server sandbox using its own pinned 1.0.5 toolchain."
+        },
+        { "id": "c", "text": "Yes, but only when you are offline." },
+        {
+          "id": "d",
+          "text": "Yes, provided your browser is open in full-screen mode."
+        }
+      ],
+      "correctChoiceId": "b",
+      "explanation": "The web platform's Run and Validate actions run independently on the server inside an isolated container pinned to Cangjie 1.0.5. Your local installation is separate for your personal offline coding practice."
+    }
+  ]
+}

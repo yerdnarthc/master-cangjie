@@ -201,6 +201,17 @@ The agent directly ran the migrated suite in a separate Linux directory using th
 
 **Evidence at initial review:** Rules and scenarios are documented; executable recovery evidence is not yet recorded.
 
+**2026-11-02 quiz submission recovery verification:** The
+[verification record](development/quiz-submission-recovery-verification.md)
+passed `npm run check`, 56 domain tests, 3 real-PostgreSQL quiz journey
+integration tests, and 25 scoped Playwright journeys. The browser selection
+covers lost and held responses, duplicate prevention, tab ownership, draft
+preparation and autosave races, session expiry, account changes, and
+confirmed-result validation; the previously failing stalled-autosave scenario
+now passes. This reduces the browser and quiz-API side of RISK-02. It does not
+establish worker restart, evaluator interruption, or full UC-16 coding-path
+recovery. RISK-02 remains In progress.
+
 ## RISK-03: MVP effort is underestimated
 
 **Failure scenario:** The use-case list is treated as a collection of similarly sized tasks. Profile editing progresses quickly while offline drafts, conflicting edits, durable execution, verification, and historical assessment handling consume much more effort than expected.
@@ -361,3 +372,16 @@ first coding-path milestone. RISK-02 is now In progress rather than Open; neithe
 risk is closed for the complete MVP. Remaining capacity/retention, backup/restore,
 provider and curriculum acceptance still require their own evidence. The startup
 runbook and guarded isolated test commands support reproducing these checks.
+
+
+### 2026-11-02 onboarding lesson handouts
+
+Three source-linked handouts now cover Getting Started with Cangjie, Installing
+the Cangjie Toolchain, and Running the First Cangjie Program. Shared topic pages
+present lessons and summaries before their activity section; the existing Hello
+World workspace is linked at `/topics/running-the-first-cangjie-program/activity`.
+The first two quizzes are explicitly unavailable. These are public lesson previews
+in the internal build, not evidence of earned topic access or complete UC-05
+onboarding/progression/resume behavior. RISK-04 remains open: quiz authoring,
+maintainer content approval and learner validation still require evidence.
+See `content/lessons/README.md` for source/version scope and content ownership.

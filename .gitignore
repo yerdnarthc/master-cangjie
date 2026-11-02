@@ -3,6 +3,7 @@
 # Application dependencies, builds, credentials and generated verification output
 node_modules/
 .next/
+.next-test/
 .env
 .env.*
 !.env.example
@@ -27,6 +28,7 @@ GEMINI.md
 .github/copilot-instructions.md
 .github/instructions/
 .github/prompts/
+/skills-lock.json
 
 # Local AI-agent notes, session state, and generated scratch artifacts
 .ai/

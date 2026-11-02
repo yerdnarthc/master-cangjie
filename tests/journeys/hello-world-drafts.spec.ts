@@ -4,7 +4,7 @@ import { resetMilestone } from './reset.ts';
 test.beforeEach(async () => { await resetMilestone(); });
 
 async function openWorkspace(page: Page) {
-  await page.goto('/topics/running-the-first-cangjie-program');
+  await page.goto('/topics/running-the-first-cangjie-program/activity');
   const login = page.getByRole('button', { name: 'Open development workspace' });
   await expect(login.or(page.getByRole('heading', { name: 'Hello, World!', exact: true }))).toBeVisible();
   if (await login.isVisible()) await login.click();
