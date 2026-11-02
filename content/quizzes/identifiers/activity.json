@@ -1,0 +1,247 @@
+{
+  "topicId": "identifiers",
+  "revision": 1,
+  "title": "Identifiers",
+  "questions": [
+    {
+      "id": "q01",
+      "prompt": "What role do identifiers play in a Cangjie program?",
+      "choices": [
+        {
+          "id": "a",
+          "text": "They are compiler directives that control optimization flags."
+        },
+        {
+          "id": "b",
+          "text": "They are user-defined names given to program elements like variables, functions, and types."
+        },
+        {
+          "id": "c",
+          "text": "They are numeric literals stored directly in CPU registers."
+        },
+        {
+          "id": "d",
+          "text": "They are punctuation marks that mark the termination of statements."
+        }
+      ],
+      "correctChoiceId": "b",
+      "explanation": "In Cangjie, an identifier is simply a name you choose for program elements—such as a variable (totalScore), a function (calculateTax), a struct, or a package."
+    },
+    {
+      "id": "q02",
+      "prompt": "Which of the following characters is permitted as the first character of an ordinary Cangjie identifier?",
+      "choices": [
+        {
+          "id": "a",
+          "text": "A digit from 0 to 9 (e.g., 3count)"
+        },
+        {
+          "id": "b",
+          "text": "A hyphen (e.g., -total)"
+        },
+        {
+          "id": "c",
+          "text": "An English letter or underscore (e.g., count or _count)"
+        },
+        {
+          "id": "d",
+          "text": "A dollar sign (e.g., $price)"
+        }
+      ],
+      "correctChoiceId": "c",
+      "explanation": "Ordinary identifiers in Cangjie must begin with either a letter (ASCII or Unicode) or an underscore (_). They can never begin with a digit or special symbols like - or $."
+    },
+    {
+      "id": "q03",
+      "prompt": "Why does the Cangjie compiler reject the declaration let 2ndPlayer = \"Alice\"?",
+      "choices": [
+        {
+          "id": "a",
+          "text": "Variable names must contain at least 10 characters."
+        },
+        {
+          "id": "b",
+          "text": "Ordinary identifiers cannot start with a numeric digit."
+        },
+        {
+          "id": "c",
+          "text": "The word Player is a reserved system keyword."
+        },
+        {
+          "id": "d",
+          "text": "String literals cannot be assigned to variables containing numbers."
+        }
+      ],
+      "correctChoiceId": "b",
+      "explanation": "When the compiler encounters a leading 2, it expects a numeric literal rather than an identifier name. A valid alternative would be player2 or secondPlayer."
+    },
+    {
+      "id": "q04",
+      "prompt": "Which characters are allowed in an ordinary Cangjie identifier after its first character?",
+      "choices": [
+        {
+          "id": "a",
+          "text": "Letters, digits, and underscores (_)"
+        },
+        {
+          "id": "b",
+          "text": "Any keyboard character, including spaces and periods"
+        },
+        {
+          "id": "c",
+          "text": "Letters and punctuation symbols like @, #, and !"
+        },
+        {
+          "id": "d",
+          "text": "Digits and mathematical operators like + and *"
+        }
+      ],
+      "correctChoiceId": "a",
+      "explanation": "After the initial letter or underscore, an identifier can include any combination of letters, numbers, and underscores. Punctuation marks (like #, @, -, or spaces) are invalid."
+    },
+    {
+      "id": "q05",
+      "prompt": "Suppose you declare var userScore = 10 and var UserScore = 20 in the same scope. How does Cangjie treat these two names?",
+      "choices": [
+        {
+          "id": "a",
+          "text": "The compiler merges them into a single variable holding the average value."
+        },
+        {
+          "id": "b",
+          "text": "Cangjie is case-sensitive, so userScore and UserScore are two completely distinct variables."
+        },
+        {
+          "id": "c",
+          "text": "Cangjie ignores letter casing and triggers a duplicate variable error."
+        },
+        {
+          "id": "d",
+          "text": "The lowercase version is automatically overwritten by the uppercase version."
+        }
+      ],
+      "correctChoiceId": "b",
+      "explanation": "Cangjie is strictly case-sensitive. userScore, UserScore, and USERSCORE refer to separate identifiers, though keeping names distinct in meaning is recommended for clean code."
+    },
+    {
+      "id": "q06",
+      "prompt": "What happens if you try to declare let class = \"Science\" in Cangjie without special syntax?",
+      "choices": [
+        {
+          "id": "a",
+          "text": "The compiler accepts it and infers the type as a string."
+        },
+        {
+          "id": "b",
+          "text": "The compiler raises a syntax error because class is a reserved language keyword."
+        },
+        {
+          "id": "c",
+          "text": "The variable is automatically converted into an object-oriented class definition."
+        },
+        {
+          "id": "d",
+          "text": "The compiler creates an anonymous struct named Science."
+        }
+      ],
+      "correctChoiceId": "b",
+      "explanation": "Words like class, let, func, and struct are reserved keywords with built-in meanings in Cangjie grammar. You cannot use them directly as ordinary variable names."
+    },
+    {
+      "id": "q07",
+      "prompt": "If you need to name an identifier using a reserved keyword (for example, when matching an external API field named var), how does Cangjie allow you to write it?",
+      "choices": [
+        {
+          "id": "a",
+          "text": "Enclose the keyword in double quotes: \"var\""
+        },
+        {
+          "id": "b",
+          "text": "Prefix the keyword with an ampersand: &var"
+        },
+        {
+          "id": "c",
+          "text": "Enclose the keyword in backticks as a raw identifier: `var`"
+        },
+        {
+          "id": "d",
+          "text": "Add a trailing exclamation mark: var!"
+        }
+      ],
+      "correctChoiceId": "c",
+      "explanation": "Cangjie supports raw identifiers using backticks (e.g., `var` or `class`). This instructs the compiler to treat the enclosed token strictly as an identifier rather than as a language keyword."
+    },
+    {
+      "id": "q08",
+      "prompt": "In Cangjie, what is the role of a standalone single underscore _?",
+      "choices": [
+        {
+          "id": "a",
+          "text": "It is a wildcard or discard placeholder used to ignore unneeded values or patterns."
+        },
+        {
+          "id": "b",
+          "text": "It automatically prints the previous evaluation result to the terminal."
+        },
+        {
+          "id": "c",
+          "text": "It is an ordinary variable name that can be read anywhere in a function."
+        },
+        {
+          "id": "d",
+          "text": "It declares a global variable accessible across all packages."
+        }
+      ],
+      "correctChoiceId": "a",
+      "explanation": "A single underscore _ is a wildcard identifier. You use it when you intentionally want to ignore a return value, tuple element, or pattern match result. Because it represents a discarded value, you cannot read from _ like a regular variable."
+    },
+    {
+      "id": "q09",
+      "prompt": "According to standard Cangjie naming conventions, which casing style is recommended for variable and function names versus types (such as classes and structs)?",
+      "choices": [
+        {
+          "id": "a",
+          "text": "Variables and functions use lowerCamelCase; types use UpperCamelCase (PascalCase)."
+        },
+        {
+          "id": "b",
+          "text": "Variables use UPPER_SNAKE_CASE; types use lower_snake_case."
+        },
+        {
+          "id": "c",
+          "text": "All names must be written in lowercase with hyphens (kebab-case)."
+        },
+        {
+          "id": "d",
+          "text": "Functions use UpperCamelCase; types and variables use all uppercase."
+        }
+      ],
+      "correctChoiceId": "a",
+      "explanation": "Standard Cangjie style follows idiomatic modern practice: types (classes, structs, enums, interfaces) use UpperCamelCase (e.g., StudentRecord), while variables, functions, and parameters use lowerCamelCase (e.g., calculateTotal)."
+    },
+    {
+      "id": "q10",
+      "prompt": "Which of the following is a valid ordinary identifier that compiles without errors in Cangjie?",
+      "choices": [
+        {
+          "id": "a",
+          "text": "total-amount"
+        },
+        {
+          "id": "b",
+          "text": "_max_retry_count"
+        },
+        {
+          "id": "c",
+          "text": "3rdAttempt"
+        },
+        {
+          "id": "d",
+          "text": "user name"
+        }
+      ],
+      "correctChoiceId": "b",
+      "explanation": "_max_retry_count is valid because it begins with an underscore and contains only letters, digits, and underscores. The others are invalid: total-amount contains a hyphen (subtraction operator), 3rdAttempt starts with a digit, and user name contains a space."
+    }
+  ]
+}
