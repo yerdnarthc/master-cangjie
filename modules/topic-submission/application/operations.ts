@@ -1,4 +1,11 @@
 import type { Score } from '../domain/evaluation.ts';
+export type TopicAccessSummary = {
+  topicId: string;
+  available: boolean;
+  completed: boolean;
+  awaitingCompletion: boolean;
+  prerequisiteTopicId: string | null;
+};
 export type Work = { problemId:string; source:string; workRevision:number; attempted:boolean };
 export type FixedContext = Work & { learnerId:string; languageVersion:string; assessment:{topicId:string;revision:number}; caseIds:string[] };
 export type Feedback = {caseId:string;status:string;actual?:string;expected?:string;diagnostics?:string};

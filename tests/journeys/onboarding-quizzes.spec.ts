@@ -73,6 +73,18 @@ test("learner attempts quiz, sees incomplete warning, passes with >= 60, marks c
 
   // Invariant UC-13-AC2: Topic is NOT complete yet, but Mark complete button IS available
   await expect(page.getByText("Passed · Awaiting completion")).toBeVisible();
+  await page.goto("/");
+  const firstTopicCard = page.locator(".topic-list li").filter({
+    has: page.getByRole("link", { name: "Getting Started with Cangjie", exact: true }),
+  });
+  await expect(firstTopicCard).toContainText("Passed · Awaiting completion");
+  const secondTopicCard = page.locator(".topic-list li").filter({
+    has: page.getByRole("heading", { name: "Installing the Cangjie Toolchain", exact: true }),
+  });
+  await expect(secondTopicCard).toContainText("Locked");
+  await expect(secondTopicCard).toContainText("Complete Getting Started with Cangjie to unlock this topic.");
+  await page.goto("/topics/getting-started-with-cangjie/activity");
+
   const markCompleteBtn = page.getByRole("button", { name: "Mark complete ✓" });
   await expect(markCompleteBtn).toBeVisible();
 

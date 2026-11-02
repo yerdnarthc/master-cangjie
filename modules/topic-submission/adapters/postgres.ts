@@ -26,13 +26,14 @@ import {
   type EvaluationContext,
 } from '../domain/evaluation.ts';
 import { betterScore } from '../domain/progress.ts';
-import { passes } from '../domain/evaluation.ts';
+import { passes, type Score } from '../domain/evaluation.ts';
 import type {
   EvaluationRequest,
   FixedContext,
   Result,
   OperationView,
   Feedback,
+  TopicAccessSummary,
 } from '../application/operations.ts';
 import type { ExecutionOutcome } from '../../../infrastructure/evaluation-transport/contracts.ts';
 
@@ -58,6 +59,39 @@ const lockActor = async (c: pg.PoolClient, a: Actor) => {
 
 export class PostgresSubmissions {
   constructor(readonly pool: pg.Pool) {}
+
+  async roadmapAccess(actor: Actor): Promise<TopicAccessSummary[]> {
+    const result = await this.pool.query<{
+      topicId: string;
+      available: boolean;
+      completed: boolean;
+      kind: 'coding' | 'multiple-choice';
+      bestScore: Score | null;
+      prerequisiteTopicId: string | null;
+    }>(
+      `SELECT
+         t.id AS "topicId",
+         COALESCE(p.available, false) AS available,
+         COALESCE(p.completed, false) AS completed,
+         t.kind AS kind,
+         p.best_score AS "bestScore",
+         LAG(t.id) OVER (ORDER BY t.position) AS "prerequisiteTopicId"
+       FROM topics t
+       LEFT JOIN learner_topic_progress p
+         ON p.topic_id = t.id AND p.learner_id = $1
+       ORDER BY t.position`,
+      [actor.learnerId],
+    );
+    return result.rows.map(({ kind, bestScore, ...summary }) => ({
+      ...summary,
+      awaitingCompletion:
+        summary.available &&
+        !summary.completed &&
+        kind === 'multiple-choice' &&
+        bestScore !== null &&
+        passes(bestScore),
+    }));
+  }
 
   async save(
     actor: Actor,

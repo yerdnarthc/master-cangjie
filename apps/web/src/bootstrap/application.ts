@@ -4,6 +4,10 @@ import { connect } from "../../../../infrastructure/persistence/connection.ts";
 import { PostgresSubmissions } from "../../../../modules/topic-submission/adapters/postgres.ts";
 import { PostgresQuizSubmissions } from "../../../../modules/topic-submission/adapters/quiz-submissions.ts";
 import { actorFromSession } from "../../../../modules/learner-account/adapters/development-session.ts";
+import {
+  OperationError,
+  type Actor,
+} from "../../../../modules/learner-account/application/actor.ts";
 
 const globalApp = globalThis as typeof globalThis & {
   mcjSubmissions?: PostgresSubmissions;
@@ -15,4 +19,13 @@ export const quizApplication = (globalApp.mcjQuizSubmissions ??=
   new PostgresQuizSubmissions(connect().pool));
 export async function authenticatedActor() {
   return actorFromSession((await cookies()).get("mcj_session")?.value);
+}
+
+export async function optionalAuthenticatedActor(): Promise<Actor | null> {
+  try {
+    return await authenticatedActor();
+  } catch (error) {
+    if (error instanceof OperationError && error.status === 401) return null;
+    throw error;
+  }
 }
