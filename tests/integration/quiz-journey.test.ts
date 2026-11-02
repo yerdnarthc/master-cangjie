@@ -16,6 +16,27 @@ afterAll(async () => {
   await pool?.end();
 });
 
+it('finalizes concurrent replays once and rejects a changed snapshot under the same identity', async () => {
+  const actor = await freshFixture(pool);
+  const topicId = 'getting-started-with-cangjie';
+  const quiz = await readQuiz(topicId);
+  const request = {
+    topicId, requestKey: 'recovery-concurrent-test', assessmentRevision: quiz.revision,
+    answers: { [quiz.questions[0].id]: quiz.questions[0].correctChoiceId },
+  };
+  const [first, replay] = await Promise.all([
+    quizSubmissions.submit(actor, request), quizSubmissions.submit(actor, request),
+  ]);
+  expect(replay.submissionId).toBe(first.submissionId);
+  expect(replay.evaluation).toEqual(first.evaluation);
+  await expect(quizSubmissions.submit(actor, { ...request, answers: {} })).rejects.toThrow(/identity was reused/i);
+  const retry = await quizSubmissions.submit(actor, { ...request, requestKey: 'recovery-intentional-retry', answers: {} });
+  expect(retry.submissionId).not.toBe(first.submissionId);
+  const records = await pool.query('SELECT request_key, snapshot FROM topic_submissions WHERE learner_id=$1 ORDER BY created_at', [actor.learnerId]);
+  expect(records.rowCount).toBe(2);
+  expect(records.rows.find(row => row.request_key === request.requestKey).snapshot.answers).toEqual(request.answers);
+});
+
 it('restores and advances multiple conflicts without changing submitted history', async () => {
   const actor = await freshFixture(pool);
   const topic = 'getting-started-with-cangjie';

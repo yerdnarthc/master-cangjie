@@ -201,6 +201,17 @@ The agent directly ran the migrated suite in a separate Linux directory using th
 
 **Evidence at initial review:** Rules and scenarios are documented; executable recovery evidence is not yet recorded.
 
+**2026-11-02 quiz submission recovery verification:** The
+[verification record](development/quiz-submission-recovery-verification.md)
+passed `npm run check`, 56 domain tests, 3 real-PostgreSQL quiz journey
+integration tests, and 25 scoped Playwright journeys. The browser selection
+covers lost and held responses, duplicate prevention, tab ownership, draft
+preparation and autosave races, session expiry, account changes, and
+confirmed-result validation; the previously failing stalled-autosave scenario
+now passes. This reduces the browser and quiz-API side of RISK-02. It does not
+establish worker restart, evaluator interruption, or full UC-16 coding-path
+recovery. RISK-02 remains In progress.
+
 ## RISK-03: MVP effort is underestimated
 
 **Failure scenario:** The use-case list is treated as a collection of similarly sized tasks. Profile editing progresses quickly while offline drafts, conflicting edits, durable execution, verification, and historical assessment handling consume much more effort than expected.

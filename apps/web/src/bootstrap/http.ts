@@ -90,6 +90,11 @@ export function numberField(
     throw new OperationError(400, `Invalid ${key}.`);
   return body[key] as number;
 }
+export function requireExpectedLearner(body: Record<string, unknown>, learnerId: string): void {
+  if (body.expectedLearnerId !== undefined && stringField(body, 'expectedLearnerId') !== learnerId) {
+    throw new OperationError(409, 'Your signed-in account changed. Reload this page to continue.');
+  }
+}
 export function uuid(value: string): string {
   if (
     !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(

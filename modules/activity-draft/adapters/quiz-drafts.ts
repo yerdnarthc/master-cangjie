@@ -53,6 +53,12 @@ function validateAnswers(
   }
 }
 
+function sameAnswers(first: Record<string, string>, second: Record<string, string>): boolean {
+  const keys = Object.keys(first);
+  return keys.length === Object.keys(second).length &&
+    keys.every(key => Object.hasOwn(second, key) && first[key] === second[key]);
+}
+
 export async function readQuizDraft(
   client: pg.Pool | pg.PoolClient,
   actor: Actor,
@@ -90,7 +96,7 @@ export async function saveQuizDraftIn(
   const draft = await readQuizDraft(client, actor, topicId, true);
   if (draft.workRevision !== request.baseRevision) {
     // A lost save response can safely acknowledge identical answers.
-    if (JSON.stringify(draft.answers) === JSON.stringify(request.answers)) {
+    if (sameAnswers(draft.answers, request.answers)) {
       return { kind: "saved", workRevision: draft.workRevision };
     }
     const conflictId = randomUUID();

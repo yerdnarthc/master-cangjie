@@ -15,6 +15,7 @@ for (const name of ['DATABASE_URL', 'MIGRATION_DATABASE_URL', 'WORKER_DATABASE_U
   process.env[name] = url.href;
 }
 process.env.NODE_ENV = 'development';
+if (host === 'web') process.env.MCJ_TEST_WEB_HOST = 'true';
 const args = host === 'web'
   ? [resolve('node_modules/next/dist/bin/next'), 'dev', '--webpack', '--hostname', '127.0.0.1', '--port', process.env.MCJ_JOURNEY_PORT ?? '3001']
   : ['--experimental-transform-types', `apps/${host === 'worker' ? 'evaluation-worker' : 'application-jobs'}/src/main.ts`];

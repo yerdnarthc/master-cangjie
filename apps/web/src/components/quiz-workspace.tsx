@@ -8,7 +8,7 @@ import type {
 } from "../../../../modules/roadmap/adapters/quiz-content.ts";
 import type { QuizEvaluation } from "../../../../modules/topic-submission/domain/quiz-evaluation.ts";
 import type { Score } from "../../../../modules/topic-submission/domain/evaluation.ts";
-import { browserDrafts } from "../../../../modules/activity-draft/adapters/browser-drafts.ts";
+import { browserDrafts, quizSubmissionRequests, type PendingQuizSubmission, type QuizSubmissionRequest } from "../../../../modules/activity-draft/adapters/browser-drafts.ts";
 
 type QuizWorkspaceData = {
   learnerId: string;
@@ -34,6 +34,35 @@ type DraftResult =
   | { kind: "saved"; workRevision: number; nextConflict?: Extract<DraftResult, { kind: "conflict" }> | null }
   | { kind: "conflict"; conflictId: string; server: QuizDraft; candidate: QuizDraft };
 
+type QuizSubmissionResult = {
+  submissionId: string;
+  evaluation: QuizEvaluation;
+  progress: QuizWorkspaceData['progress'];
+};
+
+function confirmedSubmission(value: QuizSubmissionResult): boolean {
+  const evaluation = value?.evaluation;
+  const score = evaluation?.score;
+  const progress = value?.progress;
+  return typeof value?.submissionId === 'string' && value.submissionId.length > 0 &&
+    !!score && Number.isSafeInteger(score.earned) && score.earned >= 0 &&
+    score.earned <= 100 && score.earned % 10 === 0 && score.possible === 100 &&
+    typeof evaluation.passed === 'boolean' && evaluation.totalQuestions === 10 &&
+    Number.isSafeInteger(evaluation.correctCount) && evaluation.correctCount >= 0 &&
+    Number.isSafeInteger(evaluation.unansweredCount) && evaluation.unansweredCount >= 0 &&
+    evaluation.correctCount + evaluation.unansweredCount <= 10 && score.earned === evaluation.correctCount * 10 &&
+    evaluation.passed === (score.earned >= 60) &&
+    Array.isArray(evaluation.questionResults) && evaluation.questionResults.length === 10 &&
+    evaluation.questionResults.every(result => !!result && typeof result.questionId === 'string' &&
+      typeof result.correct === 'boolean' && Number.isSafeInteger(result.earned) &&
+      (result.selectedChoiceId === null || typeof result.selectedChoiceId === 'string') && typeof result.explanation === 'string') &&
+    !!progress && typeof progress.completed === 'boolean' && typeof progress.canMarkComplete === 'boolean' &&
+    typeof progress.nextTopicAvailable === 'boolean' &&
+    (progress.bestScore === null || (!!progress.bestScore && Number.isSafeInteger(progress.bestScore.earned) &&
+      Number.isSafeInteger(progress.bestScore.possible) && progress.bestScore.possible > 0 &&
+      progress.bestScore.earned >= 0 && progress.bestScore.earned <= progress.bestScore.possible));
+}
+
 class RequestError extends Error {
   constructor(
     message: string,
@@ -47,11 +76,13 @@ async function request<T>(
   url: string,
   body?: unknown,
   method = "POST",
+  signal?: AbortSignal,
 ): Promise<T> {
   const response = await fetch(url, {
     method: body === undefined ? "GET" : method,
     credentials: "same-origin",
     cache: "no-store",
+    signal,
     ...(body === undefined
       ? {}
       : {
@@ -59,7 +90,13 @@ async function request<T>(
           body: JSON.stringify(body),
         }),
   });
-  const data = await response.json();
+  let data;
+  try {
+    data = await response.json();
+  } catch (error) {
+    if (!response.ok) throw new RequestError('The request could not be completed.', response.status);
+    throw error;
+  }
   if (!response.ok) {
     throw new RequestError(
       data.error ?? "The request could not be completed.",
@@ -67,6 +104,27 @@ async function request<T>(
     );
   }
   return data as T;
+}
+
+async function timedRequest<T>(url: string, body: unknown, method = 'POST'): Promise<T> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  try { return await request<T>(url, body, method, controller.signal); }
+  finally { clearTimeout(timeout); }
+}
+
+async function waitForDraftSave(promise: Promise<void>): Promise<void> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([promise, new Promise<never>((_, reject) => {
+      timeout = setTimeout(() => reject(new Error('Draft save timed out.')), 10000);
+    })]);
+  } finally { if (timeout) clearTimeout(timeout); }
+}
+
+function sameAnswers(first: Record<string, string>, second: Record<string, string>): boolean {
+  const keys = Object.keys(first);
+  return keys.length === Object.keys(second).length && keys.every(key => Object.hasOwn(second, key) && first[key] === second[key]);
 }
 
 export default function QuizWorkspace({ topicId }: { topicId: string }) {
@@ -77,6 +135,7 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
   const [error, setError] = useState<string>("");
   const [unauthorized, setUnauthorized] = useState<boolean>(false);
   const [submitting, setSubmitting] = useState<boolean>(false);
+  const [pendingSubmission, setPendingSubmission] = useState<PendingQuizSubmission | null>(null);
   const [completing, setCompleting] = useState<boolean>(false);
   const [showConfirmUnanswered, setShowConfirmUnanswered] =
     useState<boolean>(false);
@@ -89,6 +148,9 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
   const answersRef = useRef<Record<string, string>>({});
   const dirty = useRef<boolean>(false);
   const saving = useRef<boolean>(false);
+  const draftSaveSettled = useRef<Promise<void> | null>(null);
+  const submissionInFlight = useRef(false);
+  const pendingSubmissionRef = useRef<PendingQuizSubmission | null>(null);
   const conflictRef = useRef<Extract<DraftResult, { kind: "conflict" }> | null>(null);
   const pendingLocal = useRef<QuizDraft | null>(null);
   const localWrites = useRef<Promise<unknown>>(Promise.resolve());
@@ -114,7 +176,10 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
       storageKey.current = `quiz:${topicId}:${tabId}`;
       await localWrites.current.catch(() => {});
       const local = ws.learnerId ? await browserDrafts.read(ws.learnerId, storageKey.current) : undefined;
+      const pending = ws.learnerId ? await quizSubmissionRequests.read(ws.learnerId, topicId) : null;
       pendingLocal.current = local?.dirty ? { answers: JSON.parse(local.source), workRevision: local.baseRevision } : null;
+      pendingSubmissionRef.current = pending;
+      setPendingSubmission(pending);
       setData(ws);
       workRevision.current = ws.draft.workRevision;
       conflictRef.current = ws.conflict ?? null;
@@ -147,16 +212,19 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
   }, [load]);
 
   const save = useCallback(async (): Promise<boolean> => {
-    if (saving.current || conflictRef.current || !dirty.current || !data) return false;
+    if (saving.current || conflictRef.current || submissionInFlight.current || pendingSubmissionRef.current || !dirty.current || !data) return false;
     saving.current = true;
+    let settle!: () => void;
+    draftSaveSettled.current = new Promise<void>(resolve => { settle = resolve; });
     const sentAnswers = answersRef.current;
     setSaveStatus("Saving draft…");
     try {
-      const res = await request<DraftResult>(
+      const res = await timedRequest<DraftResult>(
         `/api/topics/${encodeURIComponent(topicId)}/quiz/draft`,
         {
           baseRevision: workRevision.current,
           answers: sentAnswers,
+          expectedLearnerId: data.learnerId,
         },
         "PUT",
       );
@@ -181,10 +249,16 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
       return false;
     } catch (err) {
       setSaveStatus("Failed to save draft");
-      setError(err instanceof Error ? err.message : "Failed to save draft.");
+      setError(
+        err instanceof Error && err.name === "AbortError"
+          ? "Draft save timed out. Try again."
+          : err instanceof Error ? err.message : "Failed to save draft.",
+      );
       return false;
     } finally {
       saving.current = false;
+      settle();
+      draftSaveSettled.current = null;
     }
   }, [data, topicId]);
 
@@ -239,6 +313,7 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
   };
 
   const handleSelect = (questionId: string, choiceId: string) => {
+    if (submissionInFlight.current || pendingSubmissionRef.current) return;
     setError("");
     const updated = { ...answersRef.current, [questionId]: choiceId };
     answersRef.current = updated;
@@ -265,41 +340,123 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
   const unansweredCount = Math.max(0, 10 - answeredCount);
 
   const handleSubmit = async (bypassUnansweredCheck = false) => {
-    if (!data) return;
-    if (!bypassUnansweredCheck && unansweredCount > 0) {
+    if (!data || submissionInFlight.current) return;
+    if (!pendingSubmissionRef.current && conflictRef.current) return;
+    if (!pendingSubmissionRef.current && !bypassUnansweredCheck && unansweredCount > 0) {
       setShowConfirmUnanswered(true);
       return;
     }
     setShowConfirmUnanswered(false);
+    submissionInFlight.current = true;
     setSubmitting(true);
     setError("");
+    const owner = crypto.randomUUID();
+    let preparingKey: string | null = null;
 
     try {
-      // First ensure latest draft is saved
-      if (conflictRef.current || (dirty.current && !(await save()))) return;
-
-      const requestKey = `submit-quiz-${topicId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const result = await request<{
-        submissionId: string;
-        evaluation: QuizEvaluation;
-        progress: {
-          bestScore: Score | null;
-          completed: boolean;
-          canMarkComplete: boolean;
-          nextTopicAvailable: boolean;
+      let pending = pendingSubmissionRef.current;
+      if (!pending) {
+        const proposed: QuizSubmissionRequest = {
+          requestKey: crypto.randomUUID(),
+          answers: { ...answersRef.current },
+          assessmentRevision: data.quiz.revision,
         };
-      }>(`/api/topics/${encodeURIComponent(topicId)}/quiz/submit`, {
-        requestKey,
-        answers: answersRef.current,
-        assessmentRevision: data.quiz.revision,
-      });
+        const claim = await quizSubmissionRequests.claim(data.learnerId, topicId, proposed, workRevision.current, owner);
+        pending = claim.pending;
+        pendingSubmissionRef.current = pending;
+        setPendingSubmission(pending);
+        if (!claim.created) {
+          setError("Another submission is awaiting confirmation. Recover it before submitting again.");
+          return;
+        }
+      }
+      if (pending.phase === 'preparing') {
+        const acquired = await quizSubmissionRequests.acquire(data.learnerId, topicId, pending.request.requestKey, owner);
+        if (acquired.kind === 'gone') { await load(); return; }
+        if (acquired.kind === 'busy') {
+          if (acquired.pending) { pendingSubmissionRef.current = acquired.pending; setPendingSubmission(acquired.pending); }
+          setError('This submission is still being prepared. Try again in a moment.');
+          return;
+        }
+        pending = acquired.pending!;
+        pendingSubmissionRef.current = pending;
+        setPendingSubmission(pending);
+        if (acquired.kind === 'owned') {
+          preparingKey = pending.request.requestKey;
+          if (draftSaveSettled.current) await waitForDraftSave(draftSaveSettled.current);
+          if (conflictRef.current) {
+            const cancelled = await quizSubmissionRequests.releasePreparation(data.learnerId, topicId, preparingKey, owner, true);
+            if (cancelled) { pendingSubmissionRef.current = null; setPendingSubmission(null); }
+            else await load();
+            preparingKey = null;
+            return;
+          }
+          const currentAnswersMatch = sameAnswers(answersRef.current, pending.request.answers);
+          const draft = await timedRequest<DraftResult>(`/api/topics/${encodeURIComponent(topicId)}/quiz/draft`, {
+            baseRevision: currentAnswersMatch ? workRevision.current : pending.baseRevision,
+            answers: pending.request.answers,
+            expectedLearnerId: data.learnerId,
+          }, 'PUT');
+          if (draft.kind === 'conflict') {
+            const cancelled = await quizSubmissionRequests.releasePreparation(data.learnerId, topicId, preparingKey, owner, true);
+            if (cancelled) {
+              pendingSubmissionRef.current = null;
+              setPendingSubmission(null);
+              conflictRef.current = draft;
+              setConflict(draft);
+              answersRef.current = draft.candidate.answers;
+              setAnswers(draft.candidate.answers);
+              setSaveStatus('Choose which draft to keep');
+            } else await load();
+            preparingKey = null;
+            return;
+          }
+          if (draft.kind !== 'saved' || !Number.isSafeInteger(draft.workRevision) || draft.workRevision < 0) {
+            throw new Error('The draft save could not be confirmed.');
+          }
+          if (currentAnswersMatch) {
+            workRevision.current = draft.workRevision;
+            dirty.current = false;
+            preserveLocal(data.learnerId, null);
+            setSaveStatus('Saved on server');
+          }
+          const ready = await quizSubmissionRequests.setReady(data.learnerId, topicId, preparingKey, owner);
+          preparingKey = null;
+          if (!ready) { await load(); return; }
+          pending = { ...pending, phase: 'ready' };
+          pendingSubmissionRef.current = pending;
+          setPendingSubmission(pending);
+        }
+      }
+      const result = await timedRequest<QuizSubmissionResult>(`/api/topics/${encodeURIComponent(topicId)}/quiz/submit`, { ...pending.request, expectedLearnerId: data.learnerId });
+      if (!confirmedSubmission(result)) {
+        throw new Error('The submission result could not be confirmed.');
+      }
+      await quizSubmissionRequests.clear(data.learnerId, topicId, pending.request.requestKey);
+      pendingSubmissionRef.current = null;
+      setPendingSubmission(null);
 
       setEvaluation(result.evaluation);
       setData((prev) => (prev ? { ...prev, progress: result.progress } : prev));
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Submission failed.");
+      if (preparingKey) await quizSubmissionRequests.releasePreparation(data.learnerId, topicId, preparingKey, owner).catch(() => {});
+      if (err instanceof RequestError && err.status === 401) {
+        setUnauthorized(true);
+        setError("Your session has ended. Open the workspace again to recover your submission.");
+        return;
+      }
+      if (err instanceof RequestError && err.status === 409 && err.message === 'Your signed-in account changed. Reload this page to continue.') {
+        setError(err.message);
+        return;
+      }
+      setError(pendingSubmissionRef.current
+        ? pendingSubmissionRef.current.phase === 'preparing'
+          ? "Could not finish preparing your submission. Recover it to try again."
+          : "Your submission may already be recorded. Recover it to confirm the result."
+        : "Could not prepare your submission. Check browser storage and try again.");
     } finally {
+      submissionInFlight.current = false;
       setSubmitting(false);
     }
   };
@@ -445,6 +602,14 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
         {error && (
           <div className="panel error" style={{ marginBottom: "1.5rem" }}>
             <p>{error}</p>
+          </div>
+        )}
+
+        {pendingSubmission && (
+          <div className="panel notice" role="status" style={{ marginBottom: "1.5rem" }}>
+            <p>{pendingSubmission.phase === 'preparing'
+              ? 'Your submission is being prepared. Recover it if this is interrupted.'
+              : 'Your submission is waiting for confirmation. It uses the answers you submitted, which may differ from your current draft. Recover it before starting another attempt.'}</p>
           </div>
         )}
 
@@ -668,7 +833,7 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
                         >
                           <input
                             type="radio"
-                            disabled={!!conflict}
+                            disabled={!!conflict || submitting || !!pendingSubmission}
                             name={`q-${q.id}`}
                             value={c.id}
                             checked={isChosen}
@@ -743,7 +908,7 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
               <button
                 type="button"
                 onClick={() => void save()}
-                disabled={!!conflict || saving.current || !dirty.current}
+                disabled={!!conflict || submitting || !!pendingSubmission || saving.current || !dirty.current}
               >
                 Save draft
               </button>
@@ -751,10 +916,12 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
                 type="button"
                 className="primary"
                 onClick={() => handleSubmit(false)}
-                disabled={submitting || !!conflict}
+                disabled={submitting || (!!conflict && !pendingSubmission)}
               >
                 {submitting
                   ? "Evaluating answers…"
+                  : pendingSubmission
+                    ? "Recover submission"
                   : evaluation
                     ? "Submit retry"
                     : "Submit activity"}

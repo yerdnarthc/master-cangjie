@@ -3,6 +3,7 @@
 # Application dependencies, builds, credentials and generated verification output
 node_modules/
 .next/
+.next-test/
 .env
 .env.*
 !.env.example

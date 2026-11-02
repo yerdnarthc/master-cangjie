@@ -52,7 +52,11 @@ test("saves selections made while an earlier save is pending", async ({
   await page.waitForTimeout(1700); // The debounce fires while the first response is held.
   release();
   await expect.poll(() => saves.length, { timeout: 6000 }).toBe(2);
-  expect(saves[1]).toEqual({ baseRevision: 1, answers: { q0: "a", q1: "b" } });
+  expect(saves[1]).toEqual({
+    baseRevision: 1,
+    answers: { q0: "a", q1: "b" },
+    expectedLearnerId: "test",
+  });
   await expect(
     page.getByText("Saved on server", { exact: true }),
   ).toBeVisible();
