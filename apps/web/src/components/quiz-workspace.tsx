@@ -66,6 +66,7 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
   const [data, setData] = useState<QuizWorkspaceData | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [saveStatus, setSaveStatus] = useState<string>("Loading activity…");
+  const [saveVersion, setSaveVersion] = useState(0);
   const [error, setError] = useState<string>("");
   const [unauthorized, setUnauthorized] = useState<boolean>(false);
   const [submitting, setSubmitting] = useState<boolean>(false);
@@ -116,6 +117,7 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
   const save = useCallback(async (): Promise<boolean> => {
     if (saving.current || !dirty.current || !data) return false;
     saving.current = true;
+    const sentAnswers = answersRef.current;
     setSaveStatus("Saving draft…");
     try {
       const res = await request<{
@@ -126,16 +128,17 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
         `/api/topics/${encodeURIComponent(topicId)}/quiz/draft`,
         {
           baseRevision: workRevision.current,
-          answers: answersRef.current,
+          answers: sentAnswers,
         },
         "PUT",
       );
 
       if (res.kind === "saved" && res.workRevision !== undefined) {
         workRevision.current = res.workRevision;
-        dirty.current = false;
-        setSaveStatus("Saved on server");
-        return true;
+        dirty.current = answersRef.current !== sentAnswers;
+        setSaveStatus(dirty.current ? "Unsaved changes" : "Saved on server");
+        if (dirty.current) setSaveVersion(version => version + 1);
+        return !dirty.current;
       }
       if (res.kind === "conflict" && res.conflictId) {
         // Resolve choosing candidate
@@ -149,9 +152,10 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
           "POST",
         );
         workRevision.current = resolved.workRevision;
-        dirty.current = false;
-        setSaveStatus("Saved after resolving update");
-        return true;
+        dirty.current = answersRef.current !== sentAnswers;
+        setSaveStatus(dirty.current ? "Unsaved changes" : "Saved after resolving update");
+        if (dirty.current) setSaveVersion(version => version + 1);
+        return !dirty.current;
       }
       return false;
     } catch (err) {
@@ -180,7 +184,7 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
       }
     }, 1500);
     return () => clearTimeout(timer);
-  }, [answers, save]);
+  }, [answers, save, saveVersion]);
 
   const questions = data?.quiz.questions ?? [];
   const answeredCount = Object.keys(answers).filter(
