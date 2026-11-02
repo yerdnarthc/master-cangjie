@@ -128,6 +128,18 @@ describe("lesson content adapter", () => {
     });
   });
 
+  it("reports which topic has malformed metadata JSON", async () => {
+    await withTemporaryRoot(async (root) => {
+      const topicDir = resolve(root, "sample-topic");
+      await mkdir(topicDir, { recursive: true });
+      await writeFile(resolve(topicDir, "topic.json"), "{", "utf8");
+
+      await expect(
+        new FileLessonContent(root).readMetadata("sample-topic"),
+      ).rejects.toThrow(/invalid.*metadata.*sample-topic/i);
+    });
+  });
+
   it("returns no lesson metadata for an unknown topic", async () => {
     await withTemporaryRoot(async (root) => {
       await expect(

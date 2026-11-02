@@ -63,8 +63,16 @@ export class FileLessonContent {
       });
     }
 
+    let parsed: unknown;
     try {
-      const parsed: unknown = JSON.parse(raw);
+      parsed = JSON.parse(raw);
+    } catch (error) {
+      throw new Error(`Invalid topic metadata JSON for ${topicId}.`, {
+        cause: error,
+      });
+    }
+
+    try {
       if (!isRecord(parsed) || parsed.id !== topicId) {
         throw new Error(
           `Topic metadata ID must match its directory: ${topicId}.`,
