@@ -146,6 +146,7 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
   const [saveStatus, setSaveStatus] = useState<string>("Loading activity…");
   const [saveVersion, setSaveVersion] = useState(0);
   const [error, setError] = useState<string>("");
+  const [draftError, setDraftError] = useState<string>("");
   const [unauthorized, setUnauthorized] = useState<boolean>(false);
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [pendingSubmission, setPendingSubmission] = useState<PendingQuizSubmission | null>(null);
@@ -158,6 +159,7 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
   const [conflictChanged, setConflictChanged] = useState(false);
   const [hasPendingDraftSave, setHasPendingDraftSave] = useState(false);
   const [storageWarning, setStorageWarning] = useState("");
+  const [workspaceLoadRetry, setWorkspaceLoadRetry] = useState(0);
 
   const workRevision = useRef<number>(0);
   const answersRef = useRef<Record<string, string>>({});
@@ -169,6 +171,8 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
   const automaticRetryBlock = useRef<"exhausted" | "terminal" | null>(null);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveAction = useRef<((manual?: boolean) => Promise<boolean>) | null>(null);
+  const loading = useRef(false);
+  const retryLoadAfterCurrent = useRef(false);
   const submissionInFlight = useRef(false);
   const pendingSubmissionRef = useRef<PendingQuizSubmission | null>(null);
   const conflictRef = useRef<Extract<DraftResult, { kind: "conflict" }> | null>(null);
@@ -208,7 +212,11 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
   };
 
   const load = useCallback(async () => {
+    if (loading.current) return;
+    loading.current = true;
+    let loaded = false;
     setError("");
+    setDraftError("");
     setStorageWarning("");
     automaticRetryBlock.current = null;
     try {
@@ -252,6 +260,7 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
       if (ws.latestSubmission) {
         setEvaluation(ws.latestSubmission.evaluation);
       }
+      loaded = true;
     } catch (e) {
       if (e instanceof RequestError && e.status === 401) {
         setUnauthorized(true);
@@ -262,12 +271,36 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
             : "Unable to open multiple-choice activity.",
         );
       }
+    } finally {
+      loading.current = false;
+      if (retryLoadAfterCurrent.current) {
+        retryLoadAfterCurrent.current = false;
+        if (!loaded) setWorkspaceLoadRetry((version) => version + 1);
+      }
     }
   }, [topicId]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (data || unauthorized) return;
+    const retryLoadWhenOnline = () => {
+      if (loading.current) {
+        retryLoadAfterCurrent.current = true;
+        return;
+      }
+      void load();
+    };
+    window.addEventListener("online", retryLoadWhenOnline);
+    return () => window.removeEventListener("online", retryLoadWhenOnline);
+  }, [data, load, unauthorized]);
+
+  useEffect(() => {
+    if (workspaceLoadRetry === 0 || data || unauthorized) return;
+    void load();
+  }, [data, load, unauthorized, workspaceLoadRetry]);
 
   const save = useCallback(async (manual = false): Promise<boolean> => {
     if (manual) {
@@ -314,6 +347,7 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
         if (!Number.isSafeInteger(res.workRevision) || res.workRevision < 0) {
           throw new Error("The draft save could not be confirmed.");
         }
+        setDraftError("");
         workRevision.current = res.workRevision;
         const acknowledge = localWrites.current.catch(() => {}).then(() =>
           quizDrafts.acknowledge(data.learnerId, topicId, localTabId.current, sentSnapshot, res.workRevision),
@@ -341,6 +375,7 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
         return !dirty.current;
       }
       if (res.kind === "conflict") {
+        setDraftError("");
         const clearPending = localWrites.current.catch(() => {}).then(() =>
           quizDrafts.clearPending(data.learnerId, topicId, localTabId.current, sentSnapshot),
         );
@@ -367,7 +402,13 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
       return false;
     } catch (err) {
       const timedOut = err instanceof Error && err.name === "AbortError";
-      if (err instanceof RequestError && err.status === 401) setUnauthorized(true);
+      const message = timedOut
+        ? "Draft save timed out. Try again."
+        : err instanceof Error ? err.message : "Failed to save draft.";
+      if (err instanceof RequestError && err.status === 401) {
+        setUnauthorized(true);
+        setError(message);
+      }
       if (isRetryableDraftFailure(err) && automaticRetries.current < RETRY_DELAYS_MS.length) {
         const delay = RETRY_DELAYS_MS[automaticRetries.current];
         automaticRetries.current += 1;
@@ -380,11 +421,9 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
         automaticRetryBlock.current = isRetryableDraftFailure(err) ? "exhausted" : "terminal";
         setSaveStatus("Failed to save draft");
       }
-      setError(
-        timedOut
-          ? "Draft save timed out. Try again."
-          : err instanceof Error ? err.message : "Failed to save draft.",
-      );
+      if (!(err instanceof RequestError && err.status === 401)) {
+        setDraftError(message);
+      }
       return false;
     } finally {
       saving.current = false;
@@ -465,7 +504,6 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
 
   const handleSelect = (questionId: string, choiceId: string) => {
     if (submissionInFlight.current || pendingSubmissionRef.current) return;
-    setError("");
     const updated = { ...answersRef.current, [questionId]: choiceId };
     answersRef.current = updated;
     preserveLocal(data!.learnerId, { answers: updated, workRevision: workRevision.current });
@@ -753,9 +791,10 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
           </div>
         </div>
 
-        {error && (
+        {(error || draftError) && (
           <div className="panel error" style={{ marginBottom: "1.5rem" }}>
-            <p>{error}</p>
+            {error && <p>{error}</p>}
+            {draftError && <p>{draftError}</p>}
           </div>
         )}
 

@@ -1,6 +1,38 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import pg from "pg";
 import { LEARNER } from "../../modules/learner-account/adapters/development-session.ts";
+
+async function readQuizDraft(page: Page, learnerId: string, topicId: string) {
+  return page.evaluate(({ learnerId, topicId }) => new Promise<{
+    dirty: boolean;
+    pendingSave: unknown;
+  } | null>((resolve) => {
+    const open = indexedDB.open("master-cangjie-work");
+    open.onerror = () => resolve(null);
+    open.onsuccess = () => {
+      const database = open.result;
+      const tabId = sessionStorage.getItem("mcj-quiz-tab");
+      if (!tabId || !database.objectStoreNames.contains("quizDrafts")) {
+        database.close();
+        resolve(null);
+        return;
+      }
+      const transaction = database.transaction("quizDrafts", "readonly");
+      const get = transaction.objectStore("quizDrafts").get(
+        JSON.stringify([learnerId, `quiz:${topicId}:${tabId}`]),
+      );
+      get.onsuccess = () => {
+        const row = get.result;
+        resolve(row ? { dirty: row.dirty, pendingSave: row.pendingSave } : null);
+        database.close();
+      };
+      get.onerror = () => {
+        database.close();
+        resolve(null);
+      };
+    };
+  }), { learnerId, topicId });
+}
 
 test("preserves an answer selected while a real database save response is pending", async ({
   page,
@@ -60,6 +92,8 @@ test("preserves an answer selected while a real database save response is pendin
     release();
   }
   await firstResponse;
+  await expect.poll(() => readQuizDraft(page, LEARNER, topic))
+    .toMatchObject({ dirty: true, pendingSave: null });
   await page.clock.fastForward(1500);
   await expect.poll(() => saves.length).toBe(2);
   await expect(

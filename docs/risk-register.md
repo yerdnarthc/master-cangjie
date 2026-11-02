@@ -215,16 +215,20 @@ recovery. RISK-02 remains In progress.
 **2026-11-02 quiz autosave timeout recovery verification:** The
 [verification record](development/quiz-autosave-timeout-recovery-verification.md)
 passes `npm run check`, 56 domain tests, 32 real-PostgreSQL integration tests
-(6 skipped), and 11 scoped Chromium autosave/conflict journeys, including a
-real lost-response replay and the identical stale-snapshot PostgreSQL contract.
-The full 51-journey suite was attempted but not completed: coding-draft and
-Hello World recovery journeys failed before the quiz journeys ran. The recovery
-fixtures still expect `/api/workspace` while the coding component uses the
-topic-specific coding route; the competing-tabs draft journey also restores the
-wrong tab's version after reload and needs separate diagnosis. These failures
-leave full coding-path verification open. This evidence reduces only the quiz
-browser/API portion of RISK-02; worker restart, evaluator interruption, and the
-full UC-16 coding path remain unverified. RISK-02 remains In progress.
+(6 skipped), and 13 scoped Chromium autosave/conflict journeys, including a
+real lost-response replay, offline reload recovery, autosave error isolation,
+and the identical stale-snapshot PostgreSQL contract. The full browser suite is
+still not green: a fresh bounded run discovered 53 journeys, passed the first
+two, then failed `hello-world-drafts.spec.ts` while restoring the second tab's
+selected code; 50 journeys did not run. A targeted rerun at base `f0422ef`
+reproduced that exact coding-draft failure, confirming it predates this change.
+An earlier run found that the Hello World recovery fixtures still expect
+`/api/workspace` while the coding component uses the topic-specific coding route;
+a comparison against base `f0422ef` confirmed that mismatch also predates this
+change. These findings leave full coding-path verification open. This evidence
+reduces only the quiz browser/API portion of RISK-02; worker restart, evaluator
+interruption, and the full UC-16 coding path remain unverified. RISK-02 remains
+In progress.
 
 ## RISK-03: MVP effort is underestimated
 
