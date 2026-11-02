@@ -17,6 +17,9 @@ export function requireEnv(name: string): string {
   if (!value) throw new Error(`Missing runtime configuration: ${name}`);
   return value;
 }
+export function developmentIdentityEnabled(): boolean {
+  return process.env.MCJ_DEVELOPMENT_IDENTITY === 'true' && ['development', 'test'].includes(process.env.NODE_ENV ?? '');
+}
 export function localDevelopment(): void {
-  if (process.env.MCJ_DEVELOPMENT_IDENTITY !== 'true' || !['development', 'test'].includes(process.env.NODE_ENV ?? '')) throw new Error('Development identity is unavailable in this environment.');
+  if (!developmentIdentityEnabled()) throw new Error('Development identity is unavailable in this environment.');
 }

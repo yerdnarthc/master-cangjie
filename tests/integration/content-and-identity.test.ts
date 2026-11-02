@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readHelloWorld, publicProblem } from '../../modules/roadmap/adapters/hello-world-content.ts';
 import { actorFromSession, issueDevelopmentSession } from '../../modules/learner-account/adapters/development-session.ts';
+import { OperationError } from '../../modules/learner-account/application/actor.ts';
 
 describe('content and authenticated development actor', () => {
   it('imports exact approved bytes and exposes only the learner problem', async () => {
@@ -24,5 +25,26 @@ describe('content and authenticated development actor', () => {
     env.NODE_ENV = 'production';
     expect(() => issueDevelopmentSession()).toThrow('unavailable');
     env.NODE_ENV = 'test';
+  });
+
+  it('treats a development cookie in production as an unauthenticated visitor', () => {
+    const env = process.env as Record<string, string | undefined>;
+    env.NODE_ENV = 'test';
+    env.MCJ_DEVELOPMENT_IDENTITY = 'true';
+    env.MCJ_SESSION_SECRET = 'test-only-secret-with-at-least-thirty-two-characters';
+    const cookie = issueDevelopmentSession();
+
+    env.NODE_ENV = 'production';
+    let error: unknown;
+    try {
+      actorFromSession(cookie);
+    } catch (caught) {
+      error = caught;
+    } finally {
+      env.NODE_ENV = 'test';
+    }
+
+    expect(error).toBeInstanceOf(OperationError);
+    expect((error as OperationError).status).toBe(401);
   });
 });

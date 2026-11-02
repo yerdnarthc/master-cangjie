@@ -1,13 +1,17 @@
 import Link from "next/link";
 import { categories } from "../../../../modules/roadmap/application/onboarding.ts";
-import { application, optionalAuthenticatedActor } from "../bootstrap/application";
+import {
+  application,
+  developmentSignInAvailable,
+  optionalAuthenticatedActor,
+} from "../bootstrap/application";
 import { lessonContent } from "../bootstrap/roadmap";
 import RoadmapSignIn from "../components/roadmap-sign-in";
 
 export default async function Home() {
   const metadata = await lessonContent.listMetadata();
   const actor = await optionalAuthenticatedActor();
-  if (!actor) return <RoadmapSignIn />;
+  if (!actor) return <RoadmapSignIn developmentSignInAvailable={developmentSignInAvailable()} />;
 
   const access = await application.roadmapAccess(actor);
   const accessById = new Map(access.map((entry) => [entry.topicId, entry]));

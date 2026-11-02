@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { localDevelopment, requireEnv } from '../../../infrastructure/runtime/config.ts';
+import { developmentIdentityEnabled, localDevelopment, requireEnv } from '../../../infrastructure/runtime/config.ts';
 import { OperationError, type Actor } from '../application/actor.ts';
 export const LEARNER = '10000000-0000-4000-8000-000000000001';
 export const OTHER_LEARNER = '10000000-0000-4000-8000-000000000002';
@@ -14,6 +14,7 @@ export function issueDevelopmentSession(now = Date.now()): string {
   return `${payload}.${signature(payload)}`;
 }
 export function actorFromSession(value: string | undefined): Actor {
+  if (!developmentIdentityEnabled()) throw new OperationError(401, 'Sign in to continue.');
   localDevelopment();
   if (!value) throw new OperationError(401, 'Sign in to continue.');
   const [id, expires, mac] = value.split('.');

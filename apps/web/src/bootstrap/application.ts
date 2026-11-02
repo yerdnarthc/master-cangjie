@@ -4,6 +4,7 @@ import { connect } from "../../../../infrastructure/persistence/connection.ts";
 import { PostgresSubmissions } from "../../../../modules/topic-submission/adapters/postgres.ts";
 import { PostgresQuizSubmissions } from "../../../../modules/topic-submission/adapters/quiz-submissions.ts";
 import { actorFromSession } from "../../../../modules/learner-account/adapters/development-session.ts";
+import { developmentIdentityEnabled } from "../../../../infrastructure/runtime/config.ts";
 import {
   OperationError,
   type Actor,
@@ -19,6 +20,10 @@ export const quizApplication = (globalApp.mcjQuizSubmissions ??=
   new PostgresQuizSubmissions(connect().pool));
 export async function authenticatedActor() {
   return actorFromSession((await cookies()).get("mcj_session")?.value);
+}
+
+export function developmentSignInAvailable(): boolean {
+  return developmentIdentityEnabled();
 }
 
 export async function optionalAuthenticatedActor(): Promise<Actor | null> {
