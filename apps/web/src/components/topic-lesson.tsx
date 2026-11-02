@@ -1,31 +1,36 @@
 import Link from "next/link";
 import Markdown from "react-markdown";
 import {
-  onboarding,
+  curriculum,
+  lessonsForCategory,
   type Lesson,
 } from "../../../../modules/roadmap/application/onboarding.ts";
+
 export default function TopicLesson({ lesson }: { lesson: Lesson }) {
-  const position = onboarding.findIndex((topic) => topic.id === lesson.id);
-  const previous = onboarding[position - 1],
-    next = onboarding[position + 1];
+  const globalPosition = curriculum.findIndex((topic) => topic.id === lesson.id);
+  const categoryLessons = lessonsForCategory(lesson.categoryId);
+  const categoryPosition = categoryLessons.findIndex((topic) => topic.id === lesson.id);
+  const previous = curriculum[globalPosition - 1];
+  const next = curriculum[globalPosition + 1];
+
   return (
     <div className="workspace-shell lesson-shell">
       <header className="topbar">
         <Link href="/">MasterCangjie</Link>
-        <span className="muted">Getting Started with Cangjie</span>
+        <span className="muted">{lesson.categoryTitle}</span>
       </header>
       <main id="lesson-main">
         <p className="eyebrow">
-          Onboarding / Topic {position + 1} of {onboarding.length}
+          {lesson.categoryTitle} / Topic {categoryPosition + 1} of {categoryLessons.length}
         </p>
         <h1>{lesson.title}</h1>
         <p className="lesson-introduction">{lesson.introduction}</p>
         <div className="lesson-columns">
           <aside className="panel lesson-navigation">
-            <nav aria-label="Onboarding topics">
+            <nav aria-label={`${lesson.categoryTitle} topics`}>
               <h2>In this category</h2>
               <ol>
-                {onboarding.map((topic) => (
+                {categoryLessons.map((topic) => (
                   <li key={topic.id}>
                     <Link
                       href={`/topics/${topic.id}`}
@@ -93,20 +98,25 @@ export default function TopicLesson({ lesson }: { lesson: Lesson }) {
               <p className="eyebrow">Put it into practice</p>
               <h2 id="activity-heading">
                 {lesson.activity === "coding"
-                  ? "Hello World coding activity"
+                  ? lesson.id === "running-the-first-cangjie-program"
+                    ? "Hello World coding activity"
+                    : "Coding activity"
                   : "Multiple-choice activity"}
               </h2>
               {lesson.activity === "coding" ? (
                 <>
                   <p>
-                    Practice with the browser editor and the existing one-test
-                    Hello World assessment.
+                    {lesson.id === "running-the-first-cangjie-program"
+                      ? "Practice with the browser editor and the existing one-test Hello World assessment."
+                      : "Practice with interactive coding problems in the browser editor."}
                   </p>
                   <Link
                     className="activity-link"
                     href={`/topics/${lesson.id}/activity`}
                   >
-                    Open Hello World activity
+                    {lesson.id === "running-the-first-cangjie-program"
+                      ? "Open Hello World activity"
+                      : "Open coding activity"}
                   </Link>
                 </>
               ) : (

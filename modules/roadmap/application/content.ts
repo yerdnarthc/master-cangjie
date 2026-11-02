@@ -6,6 +6,20 @@ export type CaseDefinition = {
   inputBase64: string;
   expectedBase64: string;
 };
+
+export type CodingProblem = {
+  problemId: string;
+  slug?: string;
+  topicId: string;
+  revision: number;
+  title: string;
+  statement: string;
+  starter: string;
+  languageVersion: "1.0.5";
+  requirements: unknown[];
+  tests: CaseDefinition[];
+};
+
 export type CodingAssessment = {
   kind?: "coding";
   topicId: string;
@@ -17,6 +31,8 @@ export type CodingAssessment = {
   languageVersion: "1.0.5";
   requirements: unknown[];
   tests: CaseDefinition[];
+  slug?: string;
+  problems?: CodingProblem[];
 };
 
 export type Choice = { id: string; text: string };
@@ -41,6 +57,58 @@ export type AnyAssessment = CodingAssessment | MultipleChoiceAssessment;
 
 export const HELLO_TOPIC = "running-the-first-cangjie-program";
 export const HELLO_PROBLEM = `${HELLO_TOPIC}/hello-world`;
+
+export function getProblems(assessment: AnyAssessment): CodingProblem[] {
+  if (
+    "problems" in assessment &&
+    Array.isArray(assessment.problems) &&
+    assessment.problems.length > 0
+  ) {
+    return assessment.problems;
+  }
+  if (
+    "tests" in assessment &&
+    Array.isArray((assessment as CodingAssessment).tests)
+  ) {
+    const single = assessment as CodingAssessment;
+    return [
+      {
+        problemId: single.problemId,
+        slug:
+          single.slug ||
+          single.problemId.split("/")[1] ||
+          single.problemId,
+        topicId: single.topicId,
+        revision: single.revision,
+        title: single.title,
+        statement: single.statement,
+        starter: single.starter,
+        languageVersion: single.languageVersion || "1.0.5",
+        requirements: single.requirements || [],
+        tests: single.tests,
+      },
+    ];
+  }
+  return [];
+}
+
+export function problemFromAssessment(
+  assessment: AnyAssessment,
+  problemId?: string,
+): CodingProblem {
+  const problems = getProblems(assessment);
+  if (!problems.length) {
+    throw new Error(`No coding problems available for topic.`);
+  }
+  if (!problemId) return problems[0];
+  const found = problems.find(
+    (p) => p.problemId === problemId || p.slug === problemId,
+  );
+  if (!found) {
+    throw new Error(`Problem ${problemId} not found in topic.`);
+  }
+  return found;
+}
 
 export async function assessmentFor<T extends AnyAssessment = CodingAssessment>(
   client: pg.Pool | pg.PoolClient,

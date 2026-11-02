@@ -16,6 +16,16 @@ export type OperationView = {
   message?: string;
   retryAfter?: number;
 };
+
+export type ProblemSummary = {
+  problemId: string;
+  slug: string;
+  title: string;
+  testCount: number;
+  solved: boolean;
+  attempted: boolean;
+};
+
 export type Workspace = {
   learnerId: string;
   problem: {
@@ -24,6 +34,7 @@ export type Workspace = {
     starter: string;
     topicId: string;
     problemId: string;
+    slug?: string;
     revision: number;
     languageVersion: string;
     tests: {
@@ -33,16 +44,20 @@ export type Workspace = {
       expected?: string;
     }[];
   };
+  problems?: ProblemSummary[];
   draft: { source: string; workRevision: number; attempted: boolean };
   progress: {
     bestScore: Score | null;
     completed: boolean;
+    canMarkComplete?: boolean;
     nextTopicAvailable: boolean;
+    nextTopicId?: string | null;
   };
   latestEvaluation?: OperationView;
   latestSubmission?: OperationView;
   unresolvedSubmission?: OperationView;
 };
+
 export type SaveResult =
   | { kind: "saved"; workRevision: number }
   | {
@@ -51,10 +66,17 @@ export type SaveResult =
       server: { source: string; workRevision: number };
       candidate: { source: string; workRevision: number };
     };
+
 export type Review = {
   reviewToken: string;
   unattempted: boolean;
   workRevision: number;
   source: string;
   assessment: { topicId: string; revision: number };
+  problems?: {
+    problemId: string;
+    slug: string;
+    attempted: boolean;
+    caseCount: number;
+  }[];
 };

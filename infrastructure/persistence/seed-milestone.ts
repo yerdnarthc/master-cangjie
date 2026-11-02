@@ -4,6 +4,7 @@ import {
   readHelloWorld,
   contentHash,
 } from "../../modules/roadmap/adapters/hello-world-content.ts";
+import { readTopicCodingAssessment } from "../../modules/roadmap/adapters/coding-content.ts";
 import {
   readQuiz,
   quizContentHash,
@@ -18,6 +19,7 @@ export async function seed(url: string) {
   const content = await readHelloWorld();
   const quiz1 = await readQuiz("getting-started-with-cangjie");
   const quiz2 = await readQuiz("installing-the-cangjie-toolchain");
+  const quiz3 = await readQuiz("identifiers");
 
   try {
     await transaction(pool, async (client) => {
@@ -57,36 +59,67 @@ export async function seed(url: string) {
           "Identifiers",
           "Basic Concepts",
           "multiple-choice",
-          null,
+          1,
+        ],
+        [
+          "program-structure",
+          "Program Structure",
+          "Basic Concepts",
+          "coding",
+          1,
+        ],
+        [
+          "expressions",
+          "Expressions",
+          "Basic Concepts",
+          "coding",
+          1,
+        ],
+        [
+          "functions",
+          "Functions",
+          "Basic Concepts",
+          "coding",
+          1,
         ],
       ];
       for (const [i, t] of topics.entries()) {
         await client.query(
-          "INSERT INTO topics(id,title,category,kind,position,current_revision) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT (id) DO UPDATE SET current_revision=EXCLUDED.current_revision",
+          "INSERT INTO topics(id,title,category,kind,position,current_revision) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT (id) DO UPDATE SET title=EXCLUDED.title, category=EXCLUDED.category, kind=EXCLUDED.kind, position=EXCLUDED.position, current_revision=EXCLUDED.current_revision",
           [t[0], t[1], t[2], t[3], i, t[4]],
         );
       }
 
-      // Coding assessment
-      const existingCoding = await client.query(
-        "SELECT content_hash FROM assessment_revisions WHERE topic_id=$1 AND revision=1",
-        [content.topicId],
-      );
-      if (
-        existingCoding.rowCount &&
-        existingCoding.rows[0].content_hash !== contentHash(content)
-      ) {
-        throw new Error(
-          "Refusing changed assessment bytes under existing revision.",
+      // Coding assessments
+      const codingAssessments = [
+        content,
+        await readTopicCodingAssessment("program-structure"),
+        await readTopicCodingAssessment("expressions"),
+        await readTopicCodingAssessment("functions"),
+      ];
+
+      for (const coding of codingAssessments) {
+        const hash = contentHash(coding);
+        const existingCoding = await client.query(
+          "SELECT content_hash FROM assessment_revisions WHERE topic_id=$1 AND revision=1",
+          [coding.topicId],
+        );
+        if (
+          existingCoding.rowCount &&
+          existingCoding.rows[0].content_hash !== hash
+        ) {
+          throw new Error(
+            `Refusing changed assessment bytes under existing revision for ${coding.topicId}.`,
+          );
+        }
+        await client.query(
+          "INSERT INTO assessment_revisions VALUES($1,1,$2,$3) ON CONFLICT DO NOTHING",
+          [coding.topicId, coding, hash],
         );
       }
-      await client.query(
-        "INSERT INTO assessment_revisions VALUES($1,1,$2,$3) ON CONFLICT DO NOTHING",
-        [content.topicId, content, contentHash(content)],
-      );
 
       // Quizzes
-      for (const quiz of [quiz1, quiz2]) {
+      for (const quiz of [quiz1, quiz2, quiz3]) {
         const hash = quizContentHash(quiz);
         const existing = await client.query(
           "SELECT content_hash FROM assessment_revisions WHERE topic_id=$1 AND revision=$2",

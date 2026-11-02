@@ -9,15 +9,21 @@ export default async function Activity({
 }) {
   const { topicId } = await params;
 
-  if (topicId === "running-the-first-cangjie-program") {
-    return <CodingWorkspace />;
+  if (
+    topicId === "getting-started-with-cangjie" ||
+    topicId === "installing-the-cangjie-toolchain" ||
+    topicId === "identifiers"
+  ) {
+    return <QuizWorkspace topicId={topicId} />;
   }
 
   if (
-    topicId === "getting-started-with-cangjie" ||
-    topicId === "installing-the-cangjie-toolchain"
+    topicId === "running-the-first-cangjie-program" ||
+    topicId === "program-structure" ||
+    topicId === "expressions" ||
+    topicId === "functions"
   ) {
-    return <QuizWorkspace topicId={topicId} />;
+    return <CodingWorkspace topicId={topicId} />;
   }
 
   notFound();

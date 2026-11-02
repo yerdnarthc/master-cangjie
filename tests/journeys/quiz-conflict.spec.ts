@@ -21,7 +21,7 @@ test("asks before resolving a conflict and asks again if the server changes", as
     route.fulfill({
       json: {
         quiz: { title: "Quiz", revision: 1, questions },
-        learnerId: 'conflict-test',
+        learnerId: "conflict-test",
         draft: { answers: {}, workRevision: 0 },
         progress: {},
       },
@@ -78,17 +78,43 @@ test("asks before resolving a conflict and asks again if the server changes", as
   });
 });
 
-test('restores a postponed choice after reopening the activity', async ({ page }) => {
-  const questions = Array.from({ length: 10 }, (_, i) => ({ id: `q${i}`, prompt: `Question ${i}`, choices: [{ id: 'a', text: 'Alpha' }, { id: 'b', text: 'Beta' }] }));
-  const server = { answers: { q0: 'a' }, workRevision: 1 };
-  const candidate = { answers: { q0: 'b' }, workRevision: 0 };
+test("restores a postponed choice after reopening the activity", async ({
+  page,
+}) => {
+  const questions = Array.from({ length: 10 }, (_, i) => ({
+    id: `q${i}`,
+    prompt: `Question ${i}`,
+    choices: [
+      { id: "a", text: "Alpha" },
+      { id: "b", text: "Beta" },
+    ],
+  }));
+  const server = { answers: { q0: "a" }, workRevision: 1 };
+  const candidate = { answers: { q0: "b" }, workRevision: 0 };
   let open = true;
-  await page.route('**/api/topics/*/quiz', route => route.fulfill({ json: { learnerId: 'postponed-test', quiz: { title: 'Quiz', revision: 1, questions }, draft: server, conflict: open ? { kind: 'conflict', conflictId: 'one', server, candidate } : null, progress: {} } }));
-  await page.route('**/api/topics/*/quiz/draft/resolve', route => { open = false; return route.fulfill({ json: { kind: 'saved', workRevision: 2 } }); });
-  await page.goto('/topics/getting-started-with-cangjie/activity');
-  await expect(page.getByText('Question 0: Beta')).toBeVisible();
+  await page.route("**/api/topics/*/quiz", (route) =>
+    route.fulfill({
+      json: {
+        learnerId: "postponed-test",
+        quiz: { title: "Quiz", revision: 1, questions },
+        draft: server,
+        conflict: open
+          ? { kind: "conflict", conflictId: "one", server, candidate }
+          : null,
+        progress: {},
+      },
+    }),
+  );
+  await page.route("**/api/topics/*/quiz/draft/resolve", (route) => {
+    open = false;
+    return route.fulfill({ json: { kind: "saved", workRevision: 2 } });
+  });
+  await page.goto("/topics/getting-started-with-cangjie/activity");
+  await expect(page.getByText("Question 0: Beta")).toBeVisible();
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'Choose which answers to keep' })).toBeVisible();
-  await page.getByRole('button', { name: 'Keep my answers' }).click();
-  await expect(page.getByText('Draft choice saved')).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Choose which answers to keep" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Keep my answers" }).click();
+  await expect(page.getByText("Draft choice saved")).toBeVisible();
 });

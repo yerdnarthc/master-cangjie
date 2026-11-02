@@ -6,6 +6,7 @@ import type {
   PublicQuiz,
   PublicQuestion,
 } from "../../../../modules/roadmap/adapters/quiz-content.ts";
+import { lessonFor } from "../../../../modules/roadmap/application/onboarding.ts";
 import type { QuizEvaluation } from "../../../../modules/topic-submission/domain/quiz-evaluation.ts";
 import type { Score } from "../../../../modules/topic-submission/domain/evaluation.ts";
 import { browserDrafts, quizSubmissionRequests, type PendingQuizSubmission, type QuizSubmissionRequest } from "../../../../modules/activity-draft/adapters/browser-drafts.ts";
@@ -21,6 +22,7 @@ type QuizWorkspaceData = {
     completed: boolean;
     canMarkComplete: boolean;
     nextTopicAvailable: boolean;
+    nextTopicId: string | null;
   };
   latestSubmission?: {
     submissionId: string;
@@ -553,11 +555,14 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
     evaluation?.questionResults.map((r) => [r.questionId, r]) ?? [],
   );
 
+  const lesson = lessonFor(topicId);
+  const categoryTitle = lesson?.categoryTitle ?? "MasterCangjie";
+
   return (
     <div className="workspace-shell">
       <header className="topbar">
         <Link href="/">MasterCangjie</Link>
-        <span className="muted">Getting Started with Cangjie</span>
+        <span className="muted">{categoryTitle}</span>
         <div style={{ marginLeft: "auto" }}>
           <Link href={`/topics/${topicId}`}>← Back to lesson</Link>
         </div>
@@ -565,7 +570,7 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
 
       <main>
         <div className="breadcrumb">
-          <Link href="/">Onboarding</Link>
+          <Link href="/">{categoryTitle}</Link>
           <span>/</span>
           <Link href={`/topics/${topicId}`}>{data?.quiz.title}</Link>
           <span>/</span>
@@ -713,9 +718,9 @@ export default function QuizWorkspace({ topicId }: { topicId: string }) {
                     className="activity-link"
                     style={{ margin: 0 }}
                     href={
-                      topicId === "getting-started-with-cangjie"
-                        ? "/topics/installing-the-cangjie-toolchain"
-                        : "/topics/running-the-first-cangjie-program"
+                      data?.progress.nextTopicId
+                        ? `/topics/${data.progress.nextTopicId}`
+                        : "/"
                     }
                   >
                     Continue to next topic →

@@ -57,6 +57,7 @@ export type QuizSubmissionResult = {
     completed: boolean;
     canMarkComplete: boolean;
     nextTopicAvailable: boolean;
+    nextTopicId: string | null;
   };
 };
 
@@ -71,6 +72,7 @@ export type QuizWorkspaceView = {
     completed: boolean;
     canMarkComplete: boolean;
     nextTopicAvailable: boolean;
+    nextTopicId: string | null;
   };
   latestSubmission?: {
     submissionId: string;
@@ -131,7 +133,7 @@ export class PostgresQuizSubmissions {
 
     const next = (
       await this.pool.query(
-        "SELECT available FROM learner_topic_progress WHERE learner_id=$1 AND topic_id=(SELECT id FROM topics WHERE position=(SELECT position+1 FROM topics WHERE id=$2))",
+        "SELECT id, (SELECT available FROM learner_topic_progress WHERE learner_id=$1 AND topic_id=t.id) as available FROM topics t WHERE position=(SELECT position+1 FROM topics WHERE id=$2)",
         [actor.learnerId, topicId],
       )
     ).rows[0];
@@ -166,6 +168,7 @@ export class PostgresQuizSubmissions {
         completed: p.completed,
         canMarkComplete,
         nextTopicAvailable: !!next?.available,
+        nextTopicId: next?.id ?? null,
       },
       latestSubmission: submissionRow
         ? {
@@ -222,7 +225,7 @@ export class PostgresQuizSubmissions {
         ).rows[0];
         const next = (
           await c.query(
-            "SELECT available FROM learner_topic_progress WHERE learner_id=$1 AND topic_id=(SELECT id FROM topics WHERE position=(SELECT position+1 FROM topics WHERE id=$2))",
+            "SELECT id, (SELECT available FROM learner_topic_progress WHERE learner_id=$1 AND topic_id=t.id) as available FROM topics t WHERE position=(SELECT position+1 FROM topics WHERE id=$2)",
             [actor.learnerId, request.topicId],
           )
         ).rows[0];
@@ -234,6 +237,7 @@ export class PostgresQuizSubmissions {
             completed: p.completed,
             canMarkComplete: !p.completed && passes(p.best_score),
             nextTopicAvailable: !!next?.available,
+            nextTopicId: next?.id ?? null,
           },
         };
       }
@@ -311,7 +315,7 @@ export class PostgresQuizSubmissions {
 
       const next = (
         await c.query(
-          "SELECT available FROM learner_topic_progress WHERE learner_id=$1 AND topic_id=(SELECT id FROM topics WHERE position=(SELECT position+1 FROM topics WHERE id=$2))",
+          "SELECT id, (SELECT available FROM learner_topic_progress WHERE learner_id=$1 AND topic_id=t.id) as available FROM topics t WHERE position=(SELECT position+1 FROM topics WHERE id=$2)",
           [actor.learnerId, request.topicId],
         )
       ).rows[0];
@@ -329,6 +333,7 @@ export class PostgresQuizSubmissions {
           completed: updatedProgress.completed,
           canMarkComplete,
           nextTopicAvailable: !!next?.available,
+          nextTopicId: next?.id ?? null,
         },
       };
     });
