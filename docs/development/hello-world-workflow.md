@@ -11,23 +11,24 @@ persistence and browser evidence; see that report for scope and test-clock detai
 
 ## 1. Environment & Pinned Versions
 
-| Component | Pinned Version / Digest | Notes |
-| :--- | :--- | :--- |
-| **Node.js** | `>=24.0.0 <25` (tested `v24.22.1`) | Pinned in `.nvmrc` and root `package.json` |
-| **npm** | `12.2.1` | Pinned with `package-lock.json` |
-| **Next.js** | `16.4.3` | App router, React 19.3.1, `@mcj/web` |
-| **PostgreSQL** | `postgres:18.6` (`sha256:3a4264520e121176...`) | Exposed on port `15432` via `compose.development.yml` |
-| **Queue** | `pg-boss` `12.38.0` | Schema `evaluation_queue`, queue `cangjie-evaluate` |
-| **Cangjie Evaluator Image** | `sha256:77cf9faa236790dbd636cb41c93c62f3b1a12c3e5e5630b3892eee9ba15b0534` | Cangjie LTS 1.0.5 in Ubuntu container |
-| **Sandbox Isolation** | `runsc-systrap` | gVisor systrap runtime in Docker |
-| **Monaco Editor** | `0.56.0` (`@monaco-editor/react` `4.7.0`) | Client-side dynamic import in workspace |
-| **Client Storage** | `dexie` `4.4.7` | IndexedDB recovery for unconfirmed drafts |
+| Component                         | Pinned Version / Digest                                                     | Notes                                                     |
+| :-------------------------------- | :-------------------------------------------------------------------------- | :-------------------------------------------------------- |
+| **Node.js**                 | `>=24.0.0 <25` (tested `v24.22.1`)                                      | Pinned in `.nvmrc` and root `package.json`            |
+| **npm**                     | `12.2.1`                                                                  | Pinned with `package-lock.json`                         |
+| **Next.js**                 | `16.4.3`                                                                  | App router, React 19.3.1, `@mcj/web`                    |
+| **PostgreSQL**              | `postgres:18.6` (`sha256:3a4264520e121176...`)                          | Exposed on port `15432` via `compose.development.yml` |
+| **Queue**                   | `pg-boss` `12.38.0`                                                     | Schema `evaluation_queue`, queue `cangjie-evaluate`   |
+| **Cangjie Evaluator Image** | `sha256:77cf9faa236790dbd636cb41c93c62f3b1a12c3e5e5630b3892eee9ba15b0534` | Cangjie LTS 1.0.5 in Ubuntu container                     |
+| **Sandbox Isolation**       | `runsc-systrap`                                                           | gVisor systrap runtime in Docker                          |
+| **Monaco Editor**           | `0.56.0` (`@monaco-editor/react` `4.7.0`)                             | Client-side dynamic import in workspace                   |
+| **Client Storage**          | `dexie` `4.4.7`                                                         | IndexedDB recovery for unconfirmed drafts                 |
 
 ---
 
 ## 2. Architecture & Role Separation
 
 ### Database Roles & Permissions
+
 1. **`mcj_migrate`**: Schema owner. Runs migrations (`0001_hello_world.sql`, `0002_worker_leases.sql`) and pg-boss queue setup.
 2. **`mcj_app`**: Web host credentials. Granted `SELECT, INSERT, UPDATE, DELETE` on public business tables and `evaluation_exchange.jobs`. Explicitly revoked from `schema_migrations`.
 3. **`mcj_worker`**: Isolated execution worker credentials. Strictly prohibited from reading any public business tables (`learner_accounts`, `topics`, `coding_drafts`, `topic_submissions`). Granted `EXECUTE` only on `evaluation_exchange` functions (`claim_job`, `heartbeat`, `finish_job`).
@@ -39,9 +40,11 @@ Verified by automated integration suite: `tests/integration/database-roles.test.
 ## 3. Repeatable Verification Suites
 
 ### A. Static Architecture & Type Checks
+
 ```bash
 npm run check
 ```
+
 * Runs `tsc --noEmit` across all modules and applications.
 * Runs `tools/development/check-boundaries.mjs` ensuring:
   * Domain modules (`modules/**/domain/`) import zero frameworks or adapters.
@@ -49,16 +52,20 @@ npm run check
   * Components (`apps/web/src/components/`) import no direct database persistence.
 
 ### B. Pure Domain Tests (Deterministic, no DB)
+
 ```bash
 npm run test:domain
 ```
+
 * Verifies exact byte matching (`Hello, World!\n`), passing threshold (`5 * earned >= 3 * possible`), fraction-based best score retention, and zero-requirement gates.
 * Test suite: `evaluation.test.ts` (36 tests), `progress.test.ts` (10 tests) — **46 passed**.
 
 ### C. Real Database & Transport Integration Tests
+
 ```bash
 npm run test:integration
 ```
+
 * `content-and-identity.test.ts`: Authorized content reads, public problem projection, session development actor.
 * `drafts.test.ts`: Compare-and-swap saves, revision conflict preservation, resolution against base revision.
 * `cooldown.test.ts`: 5-second minimum manual validation cooldown, concurrency locking.
@@ -70,10 +77,12 @@ npm run test:integration
 * `recovery.test.ts`: Operational error handling without fabricating scores, learner-initiated retry.
 
 ### D. Browser Journeys (Playwright & Monaco Editor)
+
 ```bash
 npx playwright test hello-world-drafts
 npx playwright test hello-world-workflow -g "untouched starter"
 ```
+
 * Verified browser journeys with Monaco and plain text editor fallback, local draft recovery through IndexedDB/Dexie, reload preservation, and untouched submission zero-point confirmation.
 
 ---
@@ -87,7 +96,6 @@ npx playwright test hello-world-workflow -g "untouched starter"
 * **RISK-02 (Database concurrency and state integrity)**:
   * Transaction boundaries verified: atomic draft compare-and-swap, evaluation dispatch outbox, and progress finalization.
   * Monotonic progress retention verified: passing 10/10 score and completion cannot be overwritten by a subsequent 0/10 attempt.
-
 
 ## Local startup and isolated verification
 
@@ -127,7 +135,6 @@ It must target only the dedicated test database, with no competing test worker.
 The harness uses the pinned real compiler and sandbox; constructed evidence in
 ordinary persistence tests is not a substitute for this check.
 
-
 ### Cross-platform dependency note
 
 Use a platform-native dependency install on each host. A Windows `node_modules`
@@ -137,7 +144,6 @@ bindings may be missing. The recovery verification used the matching Linux
 through `NODE_PATH`, to execute the six existing real-sandbox tests without
 changing the repository dependency lock. A fresh Linux `npm ci` is the normal
 repeatable setup.
-
 
 ## Onboarding lesson entry (2026-11-02)
 
