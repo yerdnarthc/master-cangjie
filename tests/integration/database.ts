@@ -13,7 +13,7 @@ export async function testDatabase() {
   try { if(!(await admin.query('SELECT FROM pg_database WHERE datname=$1',[db])).rowCount)await admin.query(`CREATE DATABASE "${db}"`); } finally {await admin.end();}
   await migrate(testUrl); await setupRoles(testUrl); await seed(testUrl);
   const p = connect(testUrl).pool;
-  await p.query('TRUNCATE TABLE evaluation_exchange.jobs, evaluation_dispatch, solved_achievements, topic_submissions, validation_windows, evaluation_attempts, submission_reviews, draft_conflicts, coding_drafts, quiz_drafts, quiz_draft_conflicts CASCADE;');
+  await p.query('TRUNCATE TABLE evaluation_exchange.jobs, evaluation_dispatch, solved_achievements, topic_submissions, validation_windows, evaluation_attempts, submission_reviews, draft_conflicts, coding_drafts, quiz_attempts, quiz_drafts, quiz_draft_conflicts CASCADE;');
   return p;
 }
 export async function fixture(pool:ReturnType<typeof connect>['pool']) {

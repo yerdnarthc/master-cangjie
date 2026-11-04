@@ -15,7 +15,8 @@ Use the [risk register](risk-register.md) when sequencing implementation and col
 | Application language and runtime | TypeScript on a supported Node.js LTS release | One language across the web host, trusted continuation host, and worker coordinator. Domain code remains independent of runtime effects. Cangjie remains the learner-code language, not a requirement for writing the website. |
 | Web host and UI | Next.js App Router with React | One origin for UI and trusted web operations, with server rendering where useful and client-side editor/draft behavior. Self-hosted Node or container deployment is supported by the [official Next.js guidance](https://nextjs.org/docs/app/guides/self-hosting). |
 | Web transport | Thin Next.js Route Handlers; Server Actions for suitable forms | Both invoke the same UC orchestration. Server Actions do not remove authentication or authorization requirements; follow the [official data security guidance](https://nextjs.org/docs/app/guides/data-security). Use ordinary status queries for long-running evaluations initially. |
-| Styling | Tailwind CSS with accessible HTML controls | Use basic styling for a clean, functional MVP following the already defined UX architecture and UC flows. Full visual polish, a dedicated visual design, and a design system are deferred. Additional visual-design tooling or UI libraries can be introduced later. |
+| UI components, styling, and icons | shadcn/ui with 21st.dev, Tailwind CSS, and Lucide React | Follow [DESIGN.md](../DESIGN.md) for the accepted visual direction. Use [Lucide React](https://lucide.dev/guide/react/) for consistent icons alongside accessible text and controls. |
+| Animation | Motion (motion.dev) | Accepted on 2026-11-04. Use purposeful state feedback, respect reduced motion, and follow [DESIGN.md](../DESIGN.md). Dependency declaration alone does not establish implementation. |
 | Database | PostgreSQL, using a supported stable release | Stores immutable assessment/submission context and transactional progress. Use constraints and a deliberate concurrency strategy rather than assuming a default transaction solves every race. See [PostgreSQL transaction isolation](https://www.postgresql.org/docs/current/transaction-iso.html). |
 | Persistence tooling | Drizzle ORM and migrations, contained in persistence adapters | SQL-oriented persistence while keeping ORM types out of domain contracts. It supports explicit [transactions](https://orm.drizzle.team/docs/transactions); locking, uniqueness, migration roles, and retry behavior still need deliberate implementation. |
 | Google sign-in and sessions | Better Auth with its Google provider and database adapter | Its official documentation covers the [Google provider](https://better-auth.com/docs/authentication/google) and [database integration](https://better-auth.com/docs/concepts/database). Enable only the accepted Google access flow; keep contact-email/mobile verification separate from auth identity and disable deferred linking/sign-in flows. |
@@ -33,11 +34,15 @@ Use the [risk register](risk-register.md) when sequencing implementation and col
 
 Pin exact compatible package versions and compiler artifacts when implementation starts. Do not use an unreviewed floating production image. The source links support stated capabilities; this accepted combination is not a vendor-tested reference deployment.
 
+## Frontend decision update ? 2026-11-04
+
+The maintainer selected shadcn/ui with 21st.dev for UI components and Motion (motion.dev) for animation. This supersedes the earlier deferral of a design system and UI libraries. [DESIGN.md](../DESIGN.md) owns visual and component guidance; the [frontend audit](development/frontend-design-audit.md) distinguishes current implementation from this accepted target. Package installation and frontend migration are separate work.
+
 ## MVP UI scope
 
 Build a working, clean UI around the UX architecture and use-case flows already defined in the project. Keep navigation, forms, the code editor, assessment feedback, saving status, loading states, errors, and recovery actions understandable and accessible. These behaviors are part of delivering the MVP.
 
-Visual polish, detailed branding, a dedicated visual design, and a full design system come later. They do not block MVP implementation. Introduce any additional visual-design tooling or UI libraries into the stack when that work begins; no such library is selected by this acceptance.
+Apply the accepted product design incrementally as each learner-facing slice is implemented. Lucide React is the selected icon library; preserve accessible names and do not rely on icons or color alone to convey meaning.
 
 ## Why this combination
 
@@ -75,7 +80,7 @@ Local development may run the web application and PostgreSQL locally. On Windows
 - Kubernetes, independent deployments for each business module, an additional Redis installation, and a general event-streaming platform.
 - A standalone frontend deployment or mobile-client contract without a concrete client/release need.
 - A full Cangjie language-server integration, arbitrary package installation, and multi-language execution.
-- Full visual polish, detailed branding, a dedicated visual design, a design system, and additional visual-design tooling or UI libraries.
+- Full visual polish and additional UI or animation libraries beyond the accepted design system in [DESIGN.md](../DESIGN.md), shadcn/ui with 21st.dev, and Motion baseline.
 - Exact infrastructure sizing, concurrency targets, verification limits, upload constraints, and storage retention; these must follow explicit operating requirements.
 - Provider accounts, purchases, provisioning, package installation, migrations, and product implementation. This document authorizes none of those actions by itself.
 

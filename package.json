@@ -30,6 +30,7 @@
     "dexie": "4.4.7",
     "drizzle-orm": "0.45.4",
     "monaco-editor": "0.56.0",
+    "motion": "^14.9.0",
     "pg": "8.23.1",
     "pg-boss": "12.38.0",
     "react": "19.3.1",

@@ -84,12 +84,7 @@ export class PostgresSubmissions {
     );
     return result.rows.map(({ kind, bestScore, ...summary }) => ({
       ...summary,
-      awaitingCompletion:
-        summary.available &&
-        !summary.completed &&
-        kind === 'multiple-choice' &&
-        bestScore !== null &&
-        passes(bestScore),
+      awaitingCompletion: false,
     }));
   }
 

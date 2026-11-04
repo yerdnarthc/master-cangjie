@@ -1,0 +1,162 @@
+/* User-selected 21st.dev export, accepted 2026-11-04. Dark remains the app default. */
+:root {
+  --radius: 0.625rem;
+  --spacing: 0.25rem;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --font-sans: Inter, ui-sans-serif, sans-serif, system-ui;
+  --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+  --shadow-blur: 3px;
+  --shadow-color: oklch(0 0 0);
+  --shadow-spread: 0px;
+  --letter-spacing: 0em;
+  --shadow-opacity: 0.1;
+  --shadow-offset-x: 0px;
+  --shadow-offset-y: 1px;
+  --chart-1: oklch(0.81 0.10 252);
+  --chart-2: oklch(0.62 0.19 260);
+  --chart-3: oklch(0.55 0.22 263);
+  --chart-4: oklch(0.49 0.22 264);
+  --chart-5: oklch(0.42 0.18 266);
+}
+:root[data-theme="light"] {
+  --card: oklch(1 0 0);
+  --ring: oklch(0.7107 0.0351 256.79);
+  --input: oklch(0.922 0 0);
+  --muted: oklch(0.9288 0.0126 255.51);
+  --accent: oklch(0.7148 0.1257 215.22);
+  --border: oklch(0.869 0.0198 252.89);
+  --popover: oklch(1 0 0);
+  --primary: oklch(0.546 0.245 262.881);
+  --blue-tint: color-mix(in srgb, var(--primary) 12%, var(--card));
+  --sidebar: oklch(0.985 0 0);
+  --secondary: oklch(0.696 0.17 162.48);
+  --background: oklch(0.9842 0.0034 247.86);
+  --foreground: oklch(0.2795 0.0368 260.03);
+  --destructive: oklch(0.577 0.245 27.325);
+  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --card-foreground: oklch(0.2795 0.0368 260.03);
+  --sidebar-primary: oklch(0.205 0 0);
+  --muted-foreground: oklch(0.4455 0.0374 257.28);
+  --popover-foreground: oklch(0.145 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --accent-foreground: oklch(1 0 0);
+  --primary-foreground: oklch(1 0 0);
+  --secondary-foreground: oklch(1 0 0);
+  --destructive-foreground: oklch(1 0 0);
+}
+:root:not([data-theme="light"]), .dark {
+  --card: #1a2029;
+  --ring: oklch(0.556 0 0);
+  --input: oklch(0.325 0 0);
+  --muted: #232933;
+  --accent: #00ced9;
+  --border: oklch(0.275 0 0);
+  --popover: #1a2029;
+  --primary: #409cff;
+  --sidebar: oklch(0.205 0 0);
+  --secondary: #00c47f;
+  --background: #11161f;
+  --foreground: #f4f9ff;
+  --destructive: #cc272e;
+  --sidebar-ring: oklch(0.439 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-border: oklch(0.275 0 0);
+  --card-foreground: #f4f9ff;
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --muted-foreground: #95a0ab;
+  --popover-foreground: #f4f9ff;
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --destructive-foreground: #f4f9ff;
+  --accent-foreground: #11161f;
+  --primary-foreground: #11161f;
+  --secondary-foreground: #11161f;
+}
+
+@custom-variant dark (&:where(.dark, .dark *, :root:not([data-theme="light"]), :root:not([data-theme="light"]) *));
+
+@theme inline {
+  --color-card: var(--card);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-border: var(--border);
+  --color-popover: var(--popover);
+  --color-primary: var(--primary);
+  --color-sidebar: var(--sidebar);
+  --color-secondary: var(--secondary);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-destructive: var(--destructive);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-card-foreground: var(--card-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+/* Compatibility aliases for the existing screens; semantic tokens remain canonical. */
+:root {
+  --page: var(--background);
+  --chrome: var(--card);
+  --chrome-inset: var(--muted);
+  --text-on-dark: var(--foreground);
+  --muted-on-dark: var(--muted-foreground);
+  --dark-line: var(--border);
+  --paper: var(--card);
+  --paper-raised: var(--muted);
+  --paper-inset: var(--background);
+  --paper-ink: var(--card-foreground);
+  --paper-muted: var(--muted-foreground);
+  --paper-line: var(--border);
+  --cobalt: var(--primary);
+  --cobalt-light: var(--primary);
+  --teal: color-mix(in oklch, var(--secondary) 65%, var(--foreground));
+  --teal-light: var(--teal);
+  --violet: var(--primary);
+  --violet-light: var(--primary);
+  --coral: var(--destructive);
+  --coral-light: var(--destructive);
+  --amber: var(--foreground);
+  --amber-light: var(--foreground);
+  --blue-tint: color-mix(in oklch, var(--primary) 12%, var(--card));
+  --teal-tint: color-mix(in oklch, var(--secondary) 12%, var(--card));
+  --violet-tint: var(--muted);
+  --coral-tint: var(--muted);
+  --amber-tint: var(--muted);
+  --action-ink: var(--primary-foreground);
+  --action-hover: color-mix(in oklch, var(--primary) 90%, var(--foreground));
+  --ambient: color-mix(in oklch, var(--primary) 12%, var(--background));
+  --ink: var(--foreground);
+  --ui-muted: var(--muted-foreground);
+  --line: var(--border);
+  --surface: var(--card);
+  --ui-accent: var(--primary);
+  --shadow-sm: var(--shadow-offset-x) var(--shadow-offset-y) var(--shadow-blur) var(--shadow-spread) color-mix(in srgb, var(--shadow-color) 10%, transparent);
+}
+:root { color-scheme: dark; }
+:root[data-theme="light"] { color-scheme: light; }

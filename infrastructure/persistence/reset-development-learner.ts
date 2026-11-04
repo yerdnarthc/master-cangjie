@@ -9,6 +9,7 @@ export type ResetDevelopmentLearnerResult = {
   submissions: number;
   reviews: number;
   attempts: number;
+  quizAttempts: number;
   codingDrafts: number;
   codingConflicts: number;
   quizDrafts: number;
@@ -46,6 +47,18 @@ export async function resetDevelopmentLearner(
       'DELETE FROM solved_achievements WHERE learner_id = $1',
       [learnerId],
     );
+    const quizConflicts = await client.query(
+      'DELETE FROM quiz_draft_conflicts WHERE learner_id = $1',
+      [learnerId],
+    );
+    const quizDrafts = await client.query(
+      'DELETE FROM quiz_drafts WHERE learner_id = $1',
+      [learnerId],
+    );
+    const quizAttempts = await client.query(
+      'DELETE FROM quiz_attempts WHERE learner_id = $1',
+      [learnerId],
+    );
     const submissions = await client.query(
       'DELETE FROM topic_submissions WHERE learner_id = $1',
       [learnerId],
@@ -64,14 +77,6 @@ export async function resetDevelopmentLearner(
     );
     const codingConflicts = await client.query(
       'DELETE FROM draft_conflicts WHERE learner_id = $1',
-      [learnerId],
-    );
-    const quizDrafts = await client.query(
-      'DELETE FROM quiz_drafts WHERE learner_id = $1',
-      [learnerId],
-    );
-    const quizConflicts = await client.query(
-      'DELETE FROM quiz_draft_conflicts WHERE learner_id = $1',
       [learnerId],
     );
     await client.query(
@@ -96,6 +101,7 @@ export async function resetDevelopmentLearner(
       submissions: submissions.rowCount ?? 0,
       reviews: reviews.rowCount ?? 0,
       attempts: attempts.rowCount ?? 0,
+      quizAttempts: quizAttempts.rowCount ?? 0,
       codingDrafts: codingDrafts.rowCount ?? 0,
       codingConflicts: codingConflicts.rowCount ?? 0,
       quizDrafts: quizDrafts.rowCount ?? 0,

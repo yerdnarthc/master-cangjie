@@ -1,9 +1,12 @@
 import { test, expect, type Page } from "@playwright/test";
 import pg from "pg";
 import { LEARNER } from "../../modules/learner-account/adapters/development-session.ts";
+import { resetMilestone, resetLearnerToStart } from "./reset.ts";
 
 async function readQuizDraft(page: Page, learnerId: string, topicId: string) {
-  return page.evaluate(({ learnerId, topicId }) => new Promise<{
+  return page.evaluate(async ({ learnerId, topicId }) => {
+    const workspace = await fetch(`/api/topics/${encodeURIComponent(topicId)}/quiz`).then(response => response.json());
+    return new Promise<{
     dirty: boolean;
     pendingSave: unknown;
   } | null>((resolve) => {
@@ -19,7 +22,7 @@ async function readQuizDraft(page: Page, learnerId: string, topicId: string) {
       }
       const transaction = database.transaction("quizDrafts", "readonly");
       const get = transaction.objectStore("quizDrafts").get(
-        JSON.stringify([learnerId, `quiz:${topicId}:${tabId}`]),
+        JSON.stringify([learnerId, `quiz:${topicId}:${tabId}`, workspace.currentAttempt.attemptId]),
       );
       get.onsuccess = () => {
         const row = get.result;
@@ -31,13 +34,16 @@ async function readQuizDraft(page: Page, learnerId: string, topicId: string) {
         resolve(null);
       };
     };
-  }), { learnerId, topicId });
+  });
+  }, { learnerId, topicId });
 }
 
 test("preserves an answer selected while a real database save response is pending", async ({
   page,
 }) => {
   const topic = "getting-started-with-cangjie";
+  await resetMilestone();
+  await resetLearnerToStart();
   const url = process.env.TEST_DATABASE_URL;
   if (!url || !new URL(url).pathname.endsWith("_test"))
     throw new Error("A dedicated test database is required.");
@@ -68,25 +74,18 @@ test("preserves an answer selected while a real database save response is pendin
   const open = page.getByRole("button", { name: "Open development workspace" });
   await expect(open).toBeVisible();
   await open.click();
-  const inputs = page.locator("input[type=radio]");
-  await expect(inputs.first()).toBeVisible();
-  const first = inputs.first();
-  const firstName = await first.getAttribute("name");
-  const second = inputs
-    .locator(`xpath=following::input[@type="radio" and @name!="${firstName}"]`)
-    .first();
-  const secondName = await second.getAttribute("name");
-  const firstValue = await first.inputValue();
-  const secondValue = await second.inputValue();
+  const first = page.locator('#q-q01 [role="radio"]').nth(1);
+  const second = page.locator('#q-q02 [role="radio"]').nth(0);
+  await expect(first).toBeVisible();
   await page.clock.pauseAt(await page.evaluate(() => Date.now() + 60_000));
   const firstResponse = page.waitForResponse((response) =>
     response.url().includes("/quiz/draft"),
   );
   try {
-    await first.check();
+    await first.click();
     await page.clock.fastForward(1500);
     await expect.poll(() => saves.length).toBe(1);
-    await second.check();
+    await second.click();
     await page.clock.fastForward(1500);
   } finally {
     release();
@@ -96,16 +95,15 @@ test("preserves an answer selected while a real database save response is pendin
     .toMatchObject({ dirty: true, pendingSave: null });
   await page.clock.fastForward(1500);
   await expect.poll(() => saves.length).toBe(2);
-  await expect(
-    page.getByText("Saved on server", { exact: true }),
-  ).toBeVisible();
+  await expect.poll(() => readQuizDraft(page, LEARNER, topic))
+    .toMatchObject({ dirty: false, pendingSave: null });
   expect(saves[1].baseRevision).toBe(saves[0].baseRevision + 1);
   await page.reload();
   await expect(
-    page.locator(`input[name="${firstName}"][value="${firstValue}"]`),
+    page.locator('#q-q01 [role="radio"]').nth(1),
   ).toBeChecked();
   await expect(
-    page.locator(`input[name="${secondName}"][value="${secondValue}"]`),
+    page.locator('#q-q02 [role="radio"]').nth(0),
   ).toBeChecked();
 });
 
@@ -113,6 +111,8 @@ test("recovers a committed quiz save after its response is lost", async ({
   page,
 }) => {
   const topic = "getting-started-with-cangjie";
+  await resetMilestone();
+  await resetLearnerToStart();
   const url = process.env.TEST_DATABASE_URL;
   if (!url || !new URL(url).pathname.endsWith("_test"))
     throw new Error("A dedicated test database is required.");
@@ -162,23 +162,18 @@ test("recovers a committed quiz save after its response is lost", async ({
   const open = page.getByRole("button", { name: "Open development workspace" });
   await expect(open).toBeVisible();
   await open.click();
-  const inputs = page.locator("input[type=radio]");
-  await expect(inputs.first()).toBeVisible();
-  const first = inputs.first();
-  const firstName = await first.getAttribute("name");
-  const second = inputs
-    .locator(`xpath=following::input[@type="radio" and @name!="${firstName}"]`)
-    .first();
-  const secondName = await second.getAttribute("name");
-  const firstValue = await first.inputValue();
-  const secondValue = await second.inputValue();
-  const firstQuestionId = firstName!.replace(/^q-/, "");
-  const secondQuestionId = secondName!.replace(/^q-/, "");
+  const first = page.locator('#q-q01 [role="radio"]').nth(1);
+  const second = page.locator('#q-q02 [role="radio"]').nth(0);
+  await expect(first).toBeVisible();
+  const firstValue = "b";
+  const secondValue = "a";
+  const firstQuestionId = "q01";
+  const secondQuestionId = "q02";
 
-  await first.check();
+  await first.click();
   await page.clock.fastForward(1500);
   await firstCommitted;
-  await second.check();
+  await second.click();
   await page.clock.fastForward(1500);
   releaseFirst();
   await firstResponseLost;
@@ -199,8 +194,8 @@ test("recovers a committed quiz save after its response is lost", async ({
   ).toBeVisible();
 
   await page.reload();
-  await expect(page.locator(`input[name="${firstName}"][value="${firstValue}"]`)).toBeChecked();
-  await expect(page.locator(`input[name="${secondName}"][value="${secondValue}"]`)).toBeChecked();
+  await expect(page.locator('#q-q01 [role="radio"]').nth(1)).toBeChecked();
+  await expect(page.locator('#q-q02 [role="radio"]').nth(0)).toBeChecked();
   const workspaceResponse = await page.request.get(`/api/topics/${topic}/quiz`);
   expect(workspaceResponse.ok()).toBeTruthy();
   const workspace = await workspaceResponse.json();

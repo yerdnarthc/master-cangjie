@@ -1,4 +1,10 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
+
+async function openActivity(page: Page) {
+  await page.goto("/topics/getting-started-with-cangjie/activity");
+  const signIn = page.getByRole("button", { name: "Open development workspace" });
+  if (await signIn.isVisible().catch(() => false)) await signIn.click();
+}
 
 test("recovers newer edits across reload and presents them after the earlier conflict", async ({
   page,
@@ -24,6 +30,9 @@ test("recovers newer edits across reload and presents them after the earlier con
     route.fulfill({
       json: {
         learnerId: "newer-test",
+
+        currentAttempt: { attemptId: "00000000-0000-4000-8000-000000000001", assessmentRevision: 1, state: "answering", submissionId: null },
+        currentAttemptIsLegacy: false,
         quiz: { title: "Quiz", revision: 1, questions },
         draft: { answers: {}, workRevision: 0 },
         progress: {},
@@ -63,13 +72,13 @@ test("recovers newer edits across reload and presents them after the earlier con
     });
   });
   await page.clock.install();
-  await page.goto("/topics/getting-started-with-cangjie/activity");
+  await openActivity(page);
   await page.clock.pauseAt(await page.evaluate(() => Date.now() + 60_000));
   try {
-    await page.locator('input[name="q-q0"][value="a"]').check();
+    await page.locator('#q-q0 [role="radio"]').nth(0).click();
     await page.clock.fastForward(1500);
     await expect.poll(() => saves).toBe(1);
-    await page.locator('input[name="q-q1"][value="b"]').check();
+    await page.locator('#q-q1 [role="radio"]').nth(1).click();
     await page.clock.fastForward(1500);
   } finally {
     release();
@@ -85,6 +94,8 @@ test("recovers newer edits across reload and presents them after the earlier con
   await expect(page.getByText("Question 1: Beta")).toBeVisible();
   expect(resolutions).toBe(1);
   await page.getByRole("button", { name: "Keep my answers" }).click();
-  await expect(page.getByText("Draft choice saved")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Choose which answers to keep" }),
+  ).toHaveCount(0);
   expect(resolutions).toBe(2);
 });

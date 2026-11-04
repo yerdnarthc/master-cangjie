@@ -121,8 +121,8 @@ Under the accepted Next.js stack:
 | UC-07, UC-12: save working activity | Activity identity, base work revision, current code or selections | Saved revision, unsynced/error indication, or preserved conflict |
 | UC-08, UC-09: evaluate code | Problem and fixed work revision, selected test scope, operation identity | Pending evaluation or confirmed permitted outcome for that exact work |
 | UC-11: submit coding topic | Reviewed work set, applicable assessment revision, required incomplete-work acknowledgment | Pending/unfinalized submission or finalized score and progression |
-| UC-13: submit multiple choice | Fixed ten-question selections and confirmation for unanswered items | Finalized score and eligibility to mark complete, not automatic completion |
-| UC-14: mark complete | Topic identity and learner action | Completion/unlock, or explanation of missing passing evidence |
+| UC-13: submit multiple choice | Fixed ten-question selections and confirmation for unanswered items | Finalized score, automatic passing completion and immediate-successor unlock in one transaction |
+| UC-14: automatic quiz completion | Finalized passing evidence within UC-13 | Atomic completion/unlock; separate learner action superseded |
 | UC-21, UC-22: replace contact | Proposed contact and later verification evidence tied to that request | Pending or verified replacement without changing Google identity |
 
 These describe semantics rather than final HTTP routes or programming-language interfaces. Reusing a UC number means preserving its whole main flow, exceptions, and acceptance criteria.
@@ -272,7 +272,7 @@ The module interface is the test surface. Use the UC acceptance criteria and dom
 | Persistence integration | Concurrent finalization and best-score updates, duplicate submissions, shared learner/problem cooldown, conflicting saves, contact conflicts, atomic intent/dispatch, and atomic progress finalization | Chosen real PostgreSQL engine and queue integration |
 | Provider adapters | Valid/invalid identity evidence, delivery and image failures, mismatched verification/request identity, correct account association | Provider fixtures or test facilities, with deliberate external smoke checks separately |
 | Evaluation integration | Actual pinned compiler, correct/wrong output, compile error, timeout, excess output, restricted network/files, process/memory limits, failed worker, stale claim, and durable result ingestion | Real Linux execution host and selected sandbox |
-| Browser journeys | Onboarding through first unlock, code edit/validate/submit, quiz pass/mark complete, offline restore/conflict resolution, lower retry, profile verification, and locked direct link | Web, real persistence, and controlled external integrations |
+| Browser journeys | Onboarding through first unlock, code edit/validate/submit, quiz pass/automatic completion, offline restore/conflict resolution, lower retry, profile verification, and locked direct link | Web, real persistence, and controlled external integrations |
 | Dependency and output checks | Browser/domain cannot import database/provider implementations; worker cannot mutate progress; all feedback paths conceal hidden details and answer keys | Actual import graph and permitted output representations |
 
 No application tests were run while writing this design because no implementation exists. The sandbox/toolchain and queue permission assumptions require actual integration evidence before launch.

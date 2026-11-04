@@ -1,4 +1,10 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
+
+async function openActivity(page: Page) {
+  await page.goto("/topics/getting-started-with-cangjie/activity");
+  const signIn = page.getByRole("button", { name: "Open development workspace" });
+  if (await signIn.isVisible().catch(() => false)) await signIn.click();
+}
 
 test("asks before resolving a conflict and asks again if the server changes", async ({
   page,
@@ -15,13 +21,21 @@ test("asks before resolving a conflict and asks again if the server changes", as
     answers: { q0: answer },
     workRevision,
   });
-  const calls: { conflictId: string; choice: string; baseRevision: number }[] =
-    [];
+  const calls: {
+    attemptId: string;
+    expectedLearnerId: string;
+    conflictId: string;
+    choice: string;
+    baseRevision: number;
+  }[] = [];
   await page.route("**/api/topics/*/quiz", (route) =>
     route.fulfill({
       json: {
         quiz: { title: "Quiz", revision: 1, questions },
         learnerId: "conflict-test",
+
+        currentAttempt: { attemptId: "00000000-0000-4000-8000-000000000001", assessmentRevision: 1, state: "answering", submissionId: null },
+        currentAttemptIsLegacy: false,
         draft: { answers: {}, workRevision: 0 },
         progress: {},
       },
@@ -51,8 +65,8 @@ test("asks before resolving a conflict and asks again if the server changes", as
           : { kind: "saved", workRevision: 4 },
     });
   });
-  await page.goto("/topics/getting-started-with-cangjie/activity");
-  await page.locator('input[name="q-q0"][value="a"]').check();
+  await openActivity(page);
+  await page.locator('#q-q0 [role="radio"]').nth(0).click();
   await expect(
     page.getByRole("heading", { name: "Choose which answers to keep" }),
   ).toBeVisible();
@@ -65,6 +79,8 @@ test("asks before resolving a conflict and asks again if the server changes", as
     ),
   ).toBeVisible();
   expect(calls[0]).toEqual({
+    attemptId: "00000000-0000-4000-8000-000000000001",
+    expectedLearnerId: "conflict-test",
     conflictId: "conflict",
     choice: "candidate",
     baseRevision: 2,
@@ -72,6 +88,8 @@ test("asks before resolving a conflict and asks again if the server changes", as
   await page.getByRole("button", { name: "Keep saved answers" }).click();
   await expect(page.getByText("Draft choice saved")).toBeVisible();
   expect(calls[1]).toEqual({
+    attemptId: "00000000-0000-4000-8000-000000000001",
+    expectedLearnerId: "conflict-test",
     conflictId: "conflict",
     choice: "server",
     baseRevision: 3,
@@ -96,6 +114,9 @@ test("restores a postponed choice after reopening the activity", async ({
     route.fulfill({
       json: {
         learnerId: "postponed-test",
+
+        currentAttempt: { attemptId: "00000000-0000-4000-8000-000000000001", assessmentRevision: 1, state: "answering", submissionId: null },
+        currentAttemptIsLegacy: false,
         quiz: { title: "Quiz", revision: 1, questions },
         draft: server,
         conflict: open
@@ -109,7 +130,7 @@ test("restores a postponed choice after reopening the activity", async ({
     open = false;
     return route.fulfill({ json: { kind: "saved", workRevision: 2 } });
   });
-  await page.goto("/topics/getting-started-with-cangjie/activity");
+  await openActivity(page);
   await expect(page.getByText("Question 0: Beta")).toBeVisible();
   await page.reload();
   await expect(

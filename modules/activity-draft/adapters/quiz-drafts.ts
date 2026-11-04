@@ -27,7 +27,12 @@ export async function readOpenQuizConflict(
   server: QuizDraft,
 ): Promise<Extract<SaveQuizResult, { kind: "conflict" }> | null> {
   const result = await client.query(
-    'SELECT id, base_revision, candidate_answers FROM quiz_draft_conflicts WHERE learner_id=$1 AND topic_id=$2 AND resolved=false ORDER BY created_at, id LIMIT 1',
+    `SELECT c.id, c.base_revision, c.candidate_answers
+     FROM quiz_draft_conflicts c
+     JOIN quiz_drafts d
+       ON d.learner_id = c.learner_id AND d.topic_id = c.topic_id AND d.attempt_id = c.attempt_id
+     WHERE c.learner_id=$1 AND c.topic_id=$2 AND c.resolved=false
+     ORDER BY c.created_at, c.id LIMIT 1`,
     [actor.learnerId, topicId],
   );
   const row = result.rows[0];
@@ -66,16 +71,15 @@ export async function readQuizDraft(
   lock = false,
 ): Promise<QuizDraft> {
   await accessible(client, actor, topicId);
-  await client.query(
-    "INSERT INTO quiz_drafts(learner_id, topic_id, answers) VALUES($1, $2, $3) ON CONFLICT DO NOTHING",
-    [actor.learnerId, topicId, "{}"],
-  );
   const r = await client.query(
     "SELECT answers, work_revision FROM quiz_drafts WHERE learner_id=$1 AND topic_id=$2" +
       (lock ? " FOR UPDATE" : ""),
     [actor.learnerId, topicId],
   );
   const row = r.rows[0];
+  if (!row) {
+    throw new OperationError(409, "The quiz attempt must be initialized before loading its draft.");
+  }
   return {
     answers: (row?.answers ?? {}) as Record<string, string>,
     workRevision: row?.work_revision ?? 0,
@@ -100,12 +104,17 @@ export async function saveQuizDraftIn(
       return { kind: "saved", workRevision: draft.workRevision };
     }
     const conflictId = randomUUID();
+    const attempt = await client.query(
+      "SELECT attempt_id FROM quiz_drafts WHERE learner_id=$1 AND topic_id=$2",
+      [actor.learnerId, topicId],
+    );
     await client.query(
-      "INSERT INTO quiz_draft_conflicts(id, learner_id, topic_id, base_revision, candidate_answers) VALUES($1, $2, $3, $4, $5)",
+      "INSERT INTO quiz_draft_conflicts(id, learner_id, topic_id, attempt_id, base_revision, candidate_answers) VALUES($1, $2, $3, $4, $5, $6)",
       [
         conflictId,
         actor.learnerId,
         topicId,
+        attempt.rows[0].attempt_id,
         request.baseRevision,
         request.answers,
       ],
@@ -144,7 +153,10 @@ export async function resolveQuizDraftIn(
   }
   const draft = await readQuizDraft(client, actor, topicId, true);
   const r = await client.query(
-    "SELECT * FROM quiz_draft_conflicts WHERE id=$1 AND learner_id=$2 AND topic_id=$3 AND resolved=false FOR UPDATE",
+    `SELECT * FROM quiz_draft_conflicts
+     WHERE id=$1 AND learner_id=$2 AND topic_id=$3
+       AND attempt_id=(SELECT attempt_id FROM quiz_drafts WHERE learner_id=$2 AND topic_id=$3)
+       AND resolved=false FOR UPDATE`,
     [request.conflictId, actor.learnerId, topicId],
   );
   if (!r.rowCount) {

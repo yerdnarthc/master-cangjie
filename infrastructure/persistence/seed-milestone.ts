@@ -38,14 +38,14 @@ export async function seed(url: string) {
           "Getting Started with Cangjie",
           "Getting Started with Cangjie",
           "multiple-choice",
-          1,
+          quiz1.revision,
         ],
         [
           "installing-the-cangjie-toolchain",
           "Installing the Cangjie Toolchain",
           "Getting Started with Cangjie",
           "multiple-choice",
-          1,
+          quiz2.revision,
         ],
         [
           content.topicId,
@@ -59,7 +59,7 @@ export async function seed(url: string) {
           "Identifiers",
           "Basic Concepts",
           "multiple-choice",
-          1,
+          quiz3.revision,
         ],
         [
           "program-structure",

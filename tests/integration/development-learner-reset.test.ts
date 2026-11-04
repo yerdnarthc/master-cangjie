@@ -19,6 +19,7 @@ async function addLearnerActivity(learnerId: string, label: string) {
   const attemptId = randomUUID();
   const reviewId = randomUUID();
   const submissionId = randomUUID();
+  const quizAttemptId = randomUUID();
   const codingConflictId = randomUUID();
   const quizConflictId = randomUUID();
 
@@ -52,6 +53,12 @@ async function addLearnerActivity(learnerId: string, label: string) {
     [submissionId, learnerId, `submit-${label}`, reviewId, `submit-hash-${label}`, JSON.stringify({ answers: { q0: 'a' } }), attemptId, JSON.stringify({ earned: 10, possible: 10 })],
   );
   await pool.query(
+    `INSERT INTO quiz_attempts
+      (id, learner_id, topic_id, assessment_revision, state, submission_id, started_work_revision)
+     VALUES ($1, $2, 'getting-started-with-cangjie', 1, 'submitted', $3, 1)`,
+    [quizAttemptId, learnerId, submissionId],
+  );
+  await pool.query(
     'INSERT INTO coding_drafts (learner_id, problem_id, source, work_revision, attempted) VALUES ($1, $2, $3, 1, true)',
     [learnerId, `problem-${label}`, `main(): Int64 { // ${label}\n  return 0\n}`],
   );
@@ -60,12 +67,12 @@ async function addLearnerActivity(learnerId: string, label: string) {
     [codingConflictId, learnerId, `problem-${label}`, `candidate-${label}`],
   );
   await pool.query(
-    'INSERT INTO quiz_drafts (learner_id, topic_id, answers, work_revision) VALUES ($1, $2, $3::jsonb, 1)',
-    [learnerId, 'getting-started-with-cangjie', JSON.stringify({ q0: 'a' })],
+    'INSERT INTO quiz_drafts (learner_id, topic_id, attempt_id, answers, work_revision) VALUES ($1, $2, $3, $4::jsonb, 1)',
+    [learnerId, 'getting-started-with-cangjie', quizAttemptId, JSON.stringify({ q0: 'a' })],
   );
   await pool.query(
-    'INSERT INTO quiz_draft_conflicts (id, learner_id, topic_id, base_revision, candidate_answers) VALUES ($1, $2, $3, 0, $4::jsonb)',
-    [quizConflictId, learnerId, 'getting-started-with-cangjie', JSON.stringify({ q0: 'b' })],
+    'INSERT INTO quiz_draft_conflicts (id, learner_id, topic_id, attempt_id, base_revision, candidate_answers) VALUES ($1, $2, $3, $4, 0, $5::jsonb)',
+    [quizConflictId, learnerId, 'getting-started-with-cangjie', quizAttemptId, JSON.stringify({ q0: 'b' })],
   );
   await pool.query(
     `UPDATE learner_topic_progress
@@ -75,11 +82,11 @@ async function addLearnerActivity(learnerId: string, label: string) {
     [learnerId, JSON.stringify({ earned: 10, possible: 10 }), submissionId, `test-${label}`],
   );
 
-  return { attemptId, reviewId, submissionId, codingConflictId, quizConflictId };
+  return { attemptId, quizAttemptId, reviewId, submissionId, codingConflictId, quizConflictId };
 }
 
 async function learnerActivityCounts(learnerId: string, attemptId: string) {
-  const [jobs, dispatches, validationWindows, achievements, submissions, reviews, attempts, codingDrafts, codingConflicts, quizDrafts, quizConflicts] = await Promise.all([
+  const [jobs, dispatches, validationWindows, achievements, submissions, reviews, attempts, quizAttempts, codingDrafts, codingConflicts, quizDrafts, quizConflicts] = await Promise.all([
     pool.query('SELECT count(*)::int AS count FROM evaluation_exchange.jobs WHERE id = $1', [attemptId]),
     pool.query('SELECT count(*)::int AS count FROM evaluation_dispatch WHERE evaluation_id = $1', [attemptId]),
     pool.query('SELECT count(*)::int AS count FROM validation_windows WHERE learner_id = $1', [learnerId]),
@@ -87,6 +94,7 @@ async function learnerActivityCounts(learnerId: string, attemptId: string) {
     pool.query('SELECT count(*)::int AS count FROM topic_submissions WHERE learner_id = $1', [learnerId]),
     pool.query('SELECT count(*)::int AS count FROM submission_reviews WHERE learner_id = $1', [learnerId]),
     pool.query('SELECT count(*)::int AS count FROM evaluation_attempts WHERE learner_id = $1', [learnerId]),
+    pool.query('SELECT count(*)::int AS count FROM quiz_attempts WHERE learner_id = $1', [learnerId]),
     pool.query('SELECT count(*)::int AS count FROM coding_drafts WHERE learner_id = $1', [learnerId]),
     pool.query('SELECT count(*)::int AS count FROM draft_conflicts WHERE learner_id = $1', [learnerId]),
     pool.query('SELECT count(*)::int AS count FROM quiz_drafts WHERE learner_id = $1', [learnerId]),
@@ -100,6 +108,7 @@ async function learnerActivityCounts(learnerId: string, attemptId: string) {
     submissions: submissions.rows[0].count,
     reviews: reviews.rows[0].count,
     attempts: attempts.rows[0].count,
+    quizAttempts: quizAttempts.rows[0].count,
     codingDrafts: codingDrafts.rows[0].count,
     codingConflicts: codingConflicts.rows[0].count,
     quizDrafts: quizDrafts.rows[0].count,
@@ -141,6 +150,7 @@ it('resets one learner to the first topic and preserves another learner and publ
     submissions: 1,
     reviews: 1,
     attempts: 1,
+    quizAttempts: 1,
     codingDrafts: 1,
     codingConflicts: 1,
     quizDrafts: 1,
@@ -154,6 +164,7 @@ it('resets one learner to the first topic and preserves another learner and publ
     submissions: 0,
     reviews: 0,
     attempts: 0,
+    quizAttempts: 0,
     codingDrafts: 0,
     codingConflicts: 0,
     quizDrafts: 0,
@@ -167,6 +178,7 @@ it('resets one learner to the first topic and preserves another learner and publ
     submissions: 1,
     reviews: 1,
     attempts: 1,
+    quizAttempts: 1,
     codingDrafts: 1,
     codingConflicts: 1,
     quizDrafts: 1,
@@ -238,6 +250,7 @@ it('rolls back activity deletions if resetting progress fails', async () => {
       submissions: 1,
       reviews: 1,
       attempts: 1,
+      quizAttempts: 1,
       codingDrafts: 1,
       codingConflicts: 1,
       quizDrafts: 1,

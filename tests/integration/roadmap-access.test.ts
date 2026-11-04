@@ -73,7 +73,7 @@ it("reports persisted progress and treats a missing progress row as locked", asy
     topicId: topicIds[1],
     available: true,
     completed: false,
-    awaitingCompletion: true,
+    awaitingCompletion: false,
     prerequisiteTopicId: topicIds[0],
   });
   expect(access.find(({ topicId }) => topicId === topicIds[0])?.awaitingCompletion).toBe(false);

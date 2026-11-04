@@ -74,6 +74,10 @@ _Avoid_: Activity, topic
 A particular edition of the content and scoring criteria against which learner work is evaluated.
 _Avoid_: Code version, learner attempt
 
+**Quiz attempt**:
+A learner's answering or submitted lifecycle instance for a multiple-choice activity. An answering attempt has an editable answer sheet; a submitted attempt is read-only, and a voluntary Retry starts a new empty attempt.
+_Avoid_: Evaluation attempt, multiple-choice submission when referring to editable work
+
 ## Work and evaluation
 
 **Activity draft**:
@@ -138,16 +142,20 @@ _Avoid_: Best score, topic completion
 The highest retained finalized submission score for a learner and topic, compared by percentage while preserving its original earned and possible points.
 _Avoid_: Latest attempt score, total lifetime points
 
+**Best submission**:
+The retained finalized submission that supports a learner's best topic score, including its original answers, evaluation, and assessment revision. Higher percentages replace this reference; ties keep the earlier submission.
+_Avoid_: Current attempt, latest submission as synonyms
+
 **Passing score**:
 A finalized topic score meeting the required threshold of at least 60 percent.
-_Avoid_: Automatic multiple-choice completion
+_Avoid_: Draft score, unconfirmed result
 
 **Solved achievement**:
 The retained achievement of passing every test for a coding problem in a batch validation.
 _Avoid_: Individual test pass, topic completion
 
 **Topic completion**:
-An earned status reached by a passing coding-topic submission or by a passing multiple-choice submission followed by the learner marking the topic complete.
+An earned status reached automatically when a passing coding or multiple-choice topic submission is finalized.
 _Avoid_: Opened, read, attempted, passed as interchangeable statuses
 
 **Earned unlock**:

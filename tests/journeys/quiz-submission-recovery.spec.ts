@@ -11,6 +11,7 @@ const quizClockPaused = new Date("2026-01-01T00:10:00Z");
 
 const confirmedResult = {
   submissionId: "confirmed",
+  attemptId: "00000000-0000-4000-8000-000000000001",
   evaluation: {
     score: { earned: 0, possible: 100 },
     passed: false,
@@ -43,6 +44,12 @@ async function mockDraftSave(page: Page) {
   });
 }
 
+async function openMockActivity(page: Page, topic = "getting-started-with-cangjie") {
+  await page.goto(`/topics/${topic}/activity`);
+  const signIn = page.getByRole("button", { name: "Open development workspace" });
+  if (await signIn.isVisible().catch(() => false)) await signIn.click();
+}
+
 test("replays the fixed submission after its committed response is lost", async ({
   page,
 }) => {
@@ -68,7 +75,7 @@ test("replays the fixed submission after its committed response is lost", async 
   const open = page.getByRole("button", { name: "Open development workspace" });
   await expect(open).toBeVisible();
   await open.click();
-  await page.locator('input[name="q-q01"][value="b"]').check();
+  await page.locator('#q-q01 [role="radio"]').nth(1).click();
   await expect(
     page.getByText("Saved on server", { exact: true }),
   ).toBeVisible();
@@ -90,13 +97,18 @@ test("replays the fixed submission after its committed response is lost", async 
   await expect(
     page.getByText("10 / 100 (Needs at least 60 to pass)", { exact: true }),
   ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+  await page.getByRole("button", { name: "Retry" }).click();
+  await expect(page.getByRole("progressbar", { name: "Questions answered" })).toHaveAttribute("aria-valuenow", "0");
+  await expect(page.getByRole("radio").first()).not.toBeChecked();
+  await expect(page.getByRole("button", { name: "Submit activity" })).toBeVisible();
   expect(bodies).toHaveLength(2);
   expect(bodies[1]).toEqual(bodies[0]);
-  await page.locator('input[name="q-q01"][value="a"]').check();
+  await page.locator('#q-q01 [role="radio"]').nth(0).click();
   await expect(
     page.getByText("Saved on server", { exact: true }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Submit retry" }).click();
+  await page.getByRole("button", { name: "Submit activity" }).click();
   await page
     .getByRole("button", { name: "Submit anyway (0 points for unanswered)" })
     .click();
@@ -258,8 +270,8 @@ test("two tabs cannot create duplicate submissions while a draft save is pending
       second.getByRole("button", { name: "Submit activity" }),
     ).toBeVisible();
     await second.clock.pauseAt(quizClockPaused);
-    await page.locator('input[name="q-q01"][value="b"]').check();
-    await second.locator('input[name="q-q01"][value="b"]').check();
+    await page.locator('#q-q01 [role="radio"]').nth(1).click();
+    await second.locator('#q-q01 [role="radio"]').nth(1).click();
     await second.getByRole("button", { name: "Submit activity" }).click();
     await second
       .getByRole("button", { name: "Submit anyway (0 points for unanswered)" })
@@ -376,8 +388,8 @@ test("recovers a lost draft-preparation response when answer order differs from 
   await page
     .getByRole("button", { name: "Open development workspace" })
     .click();
-  await page.locator('input[name="q-q02"][value="a"]').check();
-  await page.locator('input[name="q-q01"][value="b"]').check();
+  await page.locator('#q-q02 [role="radio"]').nth(0).click();
+  await page.locator('#q-q01 [role="radio"]').nth(1).click();
   await expect(
     page.getByText("Saved on server", { exact: true }),
   ).toBeVisible();
@@ -443,14 +455,13 @@ test("submits the confirmed newer answers when an earlier autosave is in flight"
     await page
       .getByRole("button", { name: "Open development workspace" })
       .click();
-    await expect(page.locator('input[name="q-q01"][value="b"]')).toBeVisible();
+    await expect(page.locator('#q-q01 [role="radio"]').nth(1)).toBeVisible();
     await page.clock.pauseAt(quizClockPaused);
-    await page.locator('input[name="q-q01"][value="b"]').check();
-    await expect(page.getByText("Unsaved changes")).toBeVisible();
+    await page.locator('#q-q01 [role="radio"]').nth(1).click();
     await page.clock.fastForward(1500);
     await expect.poll(() => saves).toBe(1);
     await firstCommitted;
-    await page.locator('input[name="q-q02"][value="a"]').check();
+    await page.locator('#q-q02 [role="radio"]').nth(0).click();
     await page.getByRole("button", { name: "Submit activity" }).click();
     await page
       .getByRole("button", { name: "Submit anyway (0 points for unanswered)" })
@@ -491,6 +502,9 @@ test("does not send a submission if recovery storage is unavailable", async ({
     route.fulfill({
       json: {
         learnerId: "storage-test",
+
+        currentAttempt: { attemptId: "00000000-0000-4000-8000-000000000001", assessmentRevision: 1, state: "answering", submissionId: null },
+        currentAttemptIsLegacy: false,
         quiz: { title: "Quiz", revision: 1, questions },
         draft: { answers, workRevision: 0 },
         progress: {},
@@ -501,8 +515,9 @@ test("does not send a submission if recovery storage is unavailable", async ({
     posts++;
     return route.abort();
   });
-  await page.goto("/topics/getting-started-with-cangjie/activity");
+  await openMockActivity(page);
   await page.getByRole("button", { name: "Submit activity" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Submit activity" }).click();
   await expect(
     page.getByText(
       "Could not prepare your submission. Check browser storage and try again.",
@@ -525,6 +540,7 @@ test("a stalled response becomes recoverable with the same request", async ({
   const answers = Object.fromEntries(questions.map((q) => [q.id, "a"]));
   await mockDraftSave(page);
   const bodies: unknown[] = [];
+  let serverSubmitted = false;
   let release!: () => void;
   const held = new Promise<void>((resolve) => {
     release = resolve;
@@ -533,6 +549,21 @@ test("a stalled response becomes recoverable with the same request", async ({
     route.fulfill({
       json: {
         learnerId: "timeout-test",
+
+        currentAttempt: {
+          attemptId: "00000000-0000-4000-8000-000000000001",
+          assessmentRevision: 1,
+          state: serverSubmitted ? "submitted" : "answering",
+          submissionId: serverSubmitted ? "confirmed" : null,
+        },
+        ...(serverSubmitted ? {
+          currentSubmission: {
+            submissionId: "confirmed",
+            evaluation: confirmedResult.evaluation,
+            submittedAt: "2026-01-01T00:00:00Z",
+          },
+        } : {}),
+        currentAttemptIsLegacy: false,
         quiz: { title: "Quiz", revision: 1, questions },
         draft: { answers, workRevision: 0 },
         progress: {},
@@ -541,18 +572,20 @@ test("a stalled response becomes recoverable with the same request", async ({
   );
   await page.route("**/api/topics/*/quiz/submit", async (route) => {
     bodies.push(route.request().postDataJSON());
+    serverSubmitted = true;
     if (bodies.length === 1) {
       await held;
       await route.abort().catch(() => {});
     } else await route.fulfill({ json: confirmedResult });
   });
   try {
-    await page.goto("/topics/getting-started-with-cangjie/activity");
+    await openMockActivity(page);
     await page.getByRole("button", { name: "Submit activity" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Submit activity" }).click();
     await expect(
       page.getByRole("button", { name: "Recover submission" }),
     ).toBeVisible({ timeout: 22000 });
-    await expect(page.locator("input[type=radio]").first()).toBeDisabled();
+    await expect(page.getByRole("radio").first()).toBeDisabled();
     release();
     await page.getByRole("button", { name: "Recover submission" }).click();
     await expect(
@@ -575,6 +608,7 @@ test("a reloaded preparation can be recovered after its lease expires", async ({
   }));
   const answers = Object.fromEntries(questions.map((q) => [q.id, "a"]));
   let drafts = 0;
+  let serverSubmitted = false;
   let release!: () => void;
   const held = new Promise<void>((resolve) => {
     release = resolve;
@@ -584,6 +618,19 @@ test("a reloaded preparation can be recovered after its lease expires", async ({
     route.fulfill({
       json: {
         learnerId: "preparation-test",
+
+        currentAttempt: {
+          attemptId: "00000000-0000-4000-8000-000000000001",
+          assessmentRevision: 1,
+          state: serverSubmitted ? "submitted" : "answering",
+          submissionId: serverSubmitted ? "confirmed" : null,
+        },
+        ...(serverSubmitted ? { currentSubmission: {
+          submissionId: "confirmed",
+          evaluation: confirmedResult.evaluation,
+          submittedAt: "2026-01-01T00:00:00Z",
+        } } : {}),
+        currentAttemptIsLegacy: false,
         quiz: { title: "Quiz", revision: 1, questions },
         draft: { answers, workRevision: 0 },
         progress: {},
@@ -599,11 +646,13 @@ test("a reloaded preparation can be recovered after its lease expires", async ({
   });
   await page.route("**/api/topics/*/quiz/submit", (route) => {
     bodies.push(route.request().postDataJSON());
+    serverSubmitted = true;
     return route.fulfill({ json: confirmedResult });
   });
   try {
-    await page.goto("/topics/getting-started-with-cangjie/activity");
+    await openMockActivity(page);
     await page.getByRole("button", { name: "Submit activity" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Submit activity" }).click();
     await expect.poll(() => drafts).toBe(1);
     const storedKey = await page.evaluate(
       () =>
@@ -661,6 +710,7 @@ test("a stalled draft preparation offers recovery without sending a submission",
   }));
   const answers = Object.fromEntries(questions.map((q) => [q.id, "a"]));
   let drafts = 0;
+  let serverSubmitted = false;
   let release!: () => void;
   const held = new Promise<void>((resolve) => {
     release = resolve;
@@ -670,6 +720,19 @@ test("a stalled draft preparation offers recovery without sending a submission",
     route.fulfill({
       json: {
         learnerId: "draft-timeout-test",
+
+        currentAttempt: {
+          attemptId: "00000000-0000-4000-8000-000000000001",
+          assessmentRevision: 1,
+          state: serverSubmitted ? "submitted" : "answering",
+          submissionId: serverSubmitted ? "confirmed" : null,
+        },
+        ...(serverSubmitted ? { currentSubmission: {
+          submissionId: "confirmed",
+          evaluation: confirmedResult.evaluation,
+          submittedAt: "2026-01-01T00:00:00Z",
+        } } : {}),
+        currentAttemptIsLegacy: false,
         quiz: { title: "Quiz", revision: 1, questions },
         draft: { answers, workRevision: 0 },
         progress: {},
@@ -685,11 +748,13 @@ test("a stalled draft preparation offers recovery without sending a submission",
   });
   await page.route("**/api/topics/*/quiz/submit", (route) => {
     bodies.push(route.request().postDataJSON());
+    serverSubmitted = true;
     return route.fulfill({ json: confirmedResult });
   });
   try {
-    await page.goto("/topics/getting-started-with-cangjie/activity");
+    await openMockActivity(page);
     await page.getByRole("button", { name: "Submit activity" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Submit activity" }).click();
     await expect(
       page.getByText(
         "Could not finish preparing your submission. Recover it to try again.",
@@ -724,6 +789,7 @@ test("a stalled earlier autosave eventually releases submission recovery", async
   }));
   const answers = Object.fromEntries(questions.map((q) => [q.id, "a"]));
   let drafts = 0;
+  let serverSubmitted = false;
   let release!: () => void;
   const held = new Promise<void>((resolve) => {
     release = resolve;
@@ -733,6 +799,19 @@ test("a stalled earlier autosave eventually releases submission recovery", async
     route.fulfill({
       json: {
         learnerId: "autosave-timeout-test",
+
+        currentAttempt: {
+          attemptId: "00000000-0000-4000-8000-000000000001",
+          assessmentRevision: 1,
+          state: serverSubmitted ? "submitted" : "answering",
+          submissionId: serverSubmitted ? "confirmed" : null,
+        },
+        ...(serverSubmitted ? { currentSubmission: {
+          submissionId: "confirmed",
+          evaluation: confirmedResult.evaluation,
+          submittedAt: "2026-01-01T00:00:00Z",
+        } } : {}),
+        currentAttemptIsLegacy: false,
         quiz: { title: "Quiz", revision: 1, questions },
         draft: { answers, workRevision: 0 },
         progress: {},
@@ -748,26 +827,24 @@ test("a stalled earlier autosave eventually releases submission recovery", async
   });
   await page.route("**/api/topics/*/quiz/submit", (route) => {
     bodies.push(route.request().postDataJSON());
+    serverSubmitted = true;
     return route.fulfill({ json: confirmedResult });
   });
   try {
     await page.clock.install({ time: quizClockStart });
-    await page.goto("/topics/getting-started-with-cangjie/activity");
-    await expect(page.locator('input[name="q-q0"][value="b"]')).toBeVisible();
+    await openMockActivity(page);
+    await expect(page.locator('#q-q0 [role="radio"]').nth(1)).toBeVisible();
     await page.clock.pauseAt(quizClockPaused);
-    await page.locator('input[name="q-q0"][value="b"]').check();
-    await expect(page.getByText("Unsaved changes")).toBeVisible();
+    await page.locator('#q-q0 [role="radio"]').nth(1).click();
     await page.clock.fastForward(1500);
     await expect.poll(() => drafts).toBe(1);
     await page.getByRole("button", { name: "Submit activity" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Submit activity" }).click();
     await page.clock.fastForward(10000);
     await expect(
       page.getByRole("button", { name: "Recover submission" }),
     ).toBeVisible({ timeout: 15000 });
     await page.clock.fastForward(5000);
-    await expect(
-      page.getByText("Failed to save draft", { exact: true }),
-    ).toBeVisible({ timeout: 10000 });
     await expect(
       page.getByText("Draft save timed out. Try again."),
     ).toBeVisible();
@@ -809,12 +886,16 @@ test("a former preparation owner cannot submit after another tab takes over", as
     route.fulfill({
       json: {
         learnerId: "lease-owner-test",
+
+        currentAttempt: { attemptId: "00000000-0000-4000-8000-000000000001", assessmentRevision: 1, state: "answering", submissionId: null },
+        currentAttemptIsLegacy: false,
         quiz: { title: "Quiz", revision: 1, questions },
         draft: { answers, workRevision: 0 },
         progress: {},
         ...(finished
           ? {
-              latestSubmission: {
+              currentAttempt: { attemptId: "00000000-0000-4000-8000-000000000001", assessmentRevision: 1, state: "submitted", submissionId: "confirmed" },
+              currentSubmission: {
                 submissionId: "confirmed",
                 evaluation: confirmedResult.evaluation,
                 submittedAt: "2026-01-01T00:00:00Z",
@@ -840,7 +921,7 @@ test("a former preparation owner cannot submit after another tab takes over", as
   });
   try {
     await page.clock.install({ time: quizClockStart });
-    await page.goto(`/topics/${topic}/activity`);
+    await openMockActivity(page, topic);
     await expect(
       page.getByRole("button", { name: "Submit activity" }),
     ).toBeVisible();
@@ -852,8 +933,10 @@ test("a former preparation owner cannot submit after another tab takes over", as
     ).toBeVisible();
     await second.clock.pauseAt(quizClockPaused);
     await second.getByRole("button", { name: "Submit activity" }).click();
+    await second.getByRole("dialog").getByRole("button", { name: "Submit activity" }).click();
     await expect.poll(() => heldRequests).toBe(1);
     await page.getByRole("button", { name: "Submit activity" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Submit activity" }).click();
     await expect(
       page.getByRole("button", { name: "Recover submission" }),
     ).toBeVisible();
@@ -889,10 +972,24 @@ test("a draft conflict during preparation stops submission until the learner cho
   const serverAnswers = { ...answers, q0: "b" };
   let drafts = 0;
   let posts = 0;
+  let serverSubmitted = false;
   await page.route("**/api/topics/*/quiz", (route) =>
     route.fulfill({
       json: {
         learnerId: "prepare-conflict-test",
+
+        currentAttempt: {
+          attemptId: "00000000-0000-4000-8000-000000000001",
+          assessmentRevision: 1,
+          state: serverSubmitted ? "submitted" : "answering",
+          submissionId: serverSubmitted ? "confirmed" : null,
+        },
+        ...(serverSubmitted ? { currentSubmission: {
+          submissionId: "confirmed",
+          evaluation: confirmedResult.evaluation,
+          submittedAt: "2026-01-01T00:00:00Z",
+        } } : {}),
+        currentAttemptIsLegacy: false,
         quiz: { title: "Quiz", revision: 1, questions },
         draft: { answers, workRevision: 0 },
         progress: {},
@@ -920,10 +1017,12 @@ test("a draft conflict during preparation stops submission until the learner cho
   );
   await page.route("**/api/topics/*/quiz/submit", (route) => {
     posts++;
+    serverSubmitted = true;
     return route.fulfill({ json: confirmedResult });
   });
-  await page.goto("/topics/getting-started-with-cangjie/activity");
+  await openMockActivity(page);
   await page.getByRole("button", { name: "Submit activity" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Submit activity" }).click();
   await expect(
     page.getByRole("heading", { name: "Choose which answers to keep" }),
   ).toBeVisible();
@@ -934,6 +1033,7 @@ test("a draft conflict during preparation stops submission until the learner cho
   await page.getByRole("button", { name: "Keep saved answers" }).click();
   await expect(page.getByText("Draft choice saved")).toBeVisible();
   await page.getByRole("button", { name: "Submit activity" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Submit activity" }).click();
   await expect(
     page.getByText("0 / 100 (Needs at least 60 to pass)", { exact: true }),
   ).toBeVisible();
@@ -954,6 +1054,7 @@ test("keeps the original snapshot through repeated service failures and changed 
   const originalAnswers = Object.fromEntries(questions.map((q) => [q.id, "a"]));
   const changedAnswers = Object.fromEntries(questions.map((q) => [q.id, "b"]));
   await mockDraftSave(page);
+  let serverSubmitted = false;
   const bodies: {
     requestKey: string;
     answers: Record<string, string>;
@@ -964,6 +1065,19 @@ test("keeps the original snapshot through repeated service failures and changed 
     route.fulfill({
       json: {
         learnerId: "repeat-test",
+
+        currentAttempt: {
+          attemptId: "00000000-0000-4000-8000-000000000001",
+          assessmentRevision: 1,
+          state: serverSubmitted ? "submitted" : "answering",
+          submissionId: serverSubmitted ? "confirmed" : null,
+        },
+        ...(serverSubmitted ? { currentSubmission: {
+          submissionId: "confirmed",
+          evaluation: confirmedResult.evaluation,
+          submittedAt: "2026-01-01T00:00:00Z",
+        } } : {}),
+        currentAttemptIsLegacy: false,
         quiz: { title: "Quiz", revision: changed ? 2 : 1, questions },
         draft: {
           answers: changed ? changedAnswers : originalAnswers,
@@ -980,10 +1094,14 @@ test("keeps the original snapshot through repeated service failures and changed 
         status: 503,
         json: { error: "Temporary failure" },
       });
-    else await route.fulfill({ json: confirmedResult });
+    else {
+      serverSubmitted = true;
+      await route.fulfill({ json: confirmedResult });
+    }
   });
-  await page.goto("/topics/getting-started-with-cangjie/activity");
+  await openMockActivity(page);
   await page.getByRole("button", { name: "Submit activity" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Submit activity" }).click();
   await expect(
     page.getByRole("button", { name: "Recover submission" }),
   ).toBeVisible();
@@ -996,7 +1114,7 @@ test("keeps the original snapshot through repeated service failures and changed 
   await expect(
     page.getByRole("button", { name: "Recover submission" }),
   ).toBeVisible();
-  await expect(page.locator('input[name="q-q0"][value="b"]')).toBeDisabled();
+  await expect(page.locator('#q-q0 [role="radio"]').nth(1)).toBeDisabled();
   await page.getByRole("button", { name: "Recover submission" }).click();
   await expect(
     page.getByText("0 / 100 (Needs at least 60 to pass)"),
@@ -1018,11 +1136,25 @@ test("keeps the request through session expiry and workspace re-entry", async ({
   }));
   const answers = Object.fromEntries(questions.map((q) => [q.id, "a"]));
   await mockDraftSave(page);
+  let serverSubmitted = false;
   const bodies: unknown[] = [];
   await page.route("**/api/topics/*/quiz", (route) =>
     route.fulfill({
       json: {
         learnerId: "session-test",
+
+        currentAttempt: {
+          attemptId: "00000000-0000-4000-8000-000000000001",
+          assessmentRevision: 1,
+          state: serverSubmitted ? "submitted" : "answering",
+          submissionId: serverSubmitted ? "confirmed" : null,
+        },
+        ...(serverSubmitted ? { currentSubmission: {
+          submissionId: "confirmed",
+          evaluation: confirmedResult.evaluation,
+          submittedAt: "2026-01-01T00:00:00Z",
+        } } : {}),
+        currentAttemptIsLegacy: false,
         quiz: { title: "Quiz", revision: 1, questions },
         draft: { answers, workRevision: 0 },
         progress: {},
@@ -1030,16 +1162,22 @@ test("keeps the request through session expiry and workspace re-entry", async ({
     }),
   );
   await page.route("**/api/session", (route) =>
-    route.fulfill({ json: { signedIn: true } }),
+    route.request().method() === "GET"
+      ? route.fulfill({ json: { signedIn: true } })
+      : route.continue(),
   );
   await page.route("**/api/topics/*/quiz/submit", async (route) => {
     bodies.push(route.request().postDataJSON());
     if (bodies.length === 1)
       await route.fulfill({ status: 401, json: { error: "Session expired" } });
-    else await route.fulfill({ json: confirmedResult });
+    else {
+      serverSubmitted = true;
+      await route.fulfill({ json: confirmedResult });
+    }
   });
-  await page.goto("/topics/getting-started-with-cangjie/activity");
+  await openMockActivity(page);
   await page.getByRole("button", { name: "Submit activity" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Submit activity" }).click();
   await expect(
     page.getByText(
       "Your session has ended. Open the workspace again to recover your submission.",
@@ -1071,10 +1209,24 @@ test("keeps pending submissions scoped to their learner account", async ({
   await mockDraftSave(page);
   const bodies: { requestKey: string }[] = [];
   let learner = "account-a";
+  let submittedLearner: string | null = null;
   await page.route("**/api/topics/*/quiz", (route) =>
     route.fulfill({
       json: {
         learnerId: learner,
+
+        currentAttempt: {
+          attemptId: "00000000-0000-4000-8000-000000000001",
+          assessmentRevision: 1,
+          state: submittedLearner === learner ? "submitted" : "answering",
+          submissionId: submittedLearner === learner ? "confirmed" : null,
+        },
+        ...(submittedLearner === learner ? { currentSubmission: {
+          submissionId: "confirmed",
+          evaluation: confirmedResult.evaluation,
+          submittedAt: "2026-01-01T00:00:00Z",
+        } } : {}),
+        currentAttemptIsLegacy: false,
         quiz: { title: "Quiz", revision: 1, questions },
         draft: { answers, workRevision: 0 },
         progress: {},
@@ -1084,10 +1236,14 @@ test("keeps pending submissions scoped to their learner account", async ({
   await page.route("**/api/topics/*/quiz/submit", async (route) => {
     bodies.push(route.request().postDataJSON());
     if (bodies.length === 1) await route.abort("failed");
-    else await route.fulfill({ json: confirmedResult });
+    else {
+      submittedLearner = learner;
+      await route.fulfill({ json: confirmedResult });
+    }
   });
-  await page.goto("/topics/getting-started-with-cangjie/activity");
+  await openMockActivity(page);
   await page.getByRole("button", { name: "Submit activity" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Submit activity" }).click();
   await expect(
     page.getByRole("button", { name: "Recover submission" }),
   ).toBeVisible();
@@ -1097,6 +1253,7 @@ test("keeps pending submissions scoped to their learner account", async ({
     page.getByRole("button", { name: "Submit activity" }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Submit activity" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Submit activity" }).click();
   await expect(
     page.getByText("0 / 100 (Needs at least 60 to pass)"),
   ).toBeVisible();
@@ -1120,7 +1277,7 @@ test("rejects preparation and submission if the signed-in account changed", asyn
   await page
     .getByRole("button", { name: "Open development workspace" })
     .click();
-  await expect(page.locator("input[type=radio]").first()).toBeVisible();
+  await expect(page.getByRole("radio").first()).toBeVisible();
   const results = await page.evaluate(
     async ({ topic, expectedLearnerId }) => {
       const endpoint = `/api/topics/${topic}/quiz`;
@@ -1185,11 +1342,25 @@ test("retains the request when a success response does not contain a confirmed r
   }));
   const answers = Object.fromEntries(questions.map((q) => [q.id, "a"]));
   await mockDraftSave(page);
+  let serverSubmitted = false;
   const bodies: unknown[] = [];
   await page.route("**/api/topics/*/quiz", (route) =>
     route.fulfill({
       json: {
         learnerId: "malformed-test",
+
+        currentAttempt: {
+          attemptId: "00000000-0000-4000-8000-000000000001",
+          assessmentRevision: 1,
+          state: serverSubmitted ? "submitted" : "answering",
+          submissionId: serverSubmitted ? "confirmed" : null,
+        },
+        ...(serverSubmitted ? { currentSubmission: {
+          submissionId: "confirmed",
+          evaluation: confirmedResult.evaluation,
+          submittedAt: "2026-01-01T00:00:00Z",
+        } } : {}),
+        currentAttemptIsLegacy: false,
         quiz: { title: "Quiz", revision: 1, questions },
         draft: { answers, workRevision: 0 },
         progress: {},
@@ -1198,6 +1369,7 @@ test("retains the request when a success response does not contain a confirmed r
   );
   await page.route("**/api/topics/*/quiz/submit", async (route) => {
     bodies.push(route.request().postDataJSON());
+    serverSubmitted = true;
     await route.fulfill({
       json:
         bodies.length === 1
@@ -1209,8 +1381,9 @@ test("retains the request when a success response does not contain a confirmed r
           : confirmedResult,
     });
   });
-  await page.goto("/topics/getting-started-with-cangjie/activity");
+  await openMockActivity(page);
   await page.getByRole("button", { name: "Submit activity" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Submit activity" }).click();
   await expect(
     page.getByRole("button", { name: "Recover submission" }),
   ).toBeVisible();

@@ -1,4 +1,4 @@
-import { assertScore, passes, type Score } from "./evaluation.ts";
+import { assertScore, betterScore, passes, type Score } from "./evaluation.ts";
 
 /** Answer sheet: selection or null/undefined (unanswered) for each question. */
 export type AnswerSheet = Record<string, string | null | undefined>;
@@ -6,6 +6,8 @@ export type AnswerSheet = Record<string, string | null | undefined>;
 export type QuestionFeedback = Readonly<{
   questionId: string;
   selectedChoiceId: string | null;
+  /** Optional only for historical persisted results created before this field was added. */
+  correctChoiceId?: string;
   correct: boolean;
   earned: number; // 10 or 0
   explanation: string;
@@ -63,6 +65,7 @@ export function evaluateQuiz(
       questionResults.push({
         questionId: q.id,
         selectedChoiceId: null,
+        correctChoiceId: q.correctChoiceId,
         correct: false,
         earned: 0,
         explanation: q.explanation,
@@ -84,6 +87,7 @@ export function evaluateQuiz(
       questionResults.push({
         questionId: q.id,
         selectedChoiceId: selected,
+        correctChoiceId: q.correctChoiceId,
         correct: true,
         earned: 10,
         explanation: q.explanation,
@@ -92,6 +96,7 @@ export function evaluateQuiz(
       questionResults.push({
         questionId: q.id,
         selectedChoiceId: selected,
+        correctChoiceId: q.correctChoiceId,
         correct: false,
         earned: 0,
         explanation: q.explanation,
@@ -116,55 +121,12 @@ export type MultipleChoiceProgress = Readonly<{
   bestScore: Score | null;
   completed: boolean;
   nextTopicAvailable: boolean;
-  canMarkComplete: boolean;
 }>;
 
-/**
- * Retains progress after a multiple-choice submission.
- * Invariant: Passing (score >= 60) does NOT complete the topic or unlock the next one!
- * It only enables canMarkComplete.
- * Retains bestScore (highest score percentage).
- */
-export function retainQuizSubmissionProgress(
-  previous: MultipleChoiceProgress,
-  finalizedScore: Score,
-): MultipleChoiceProgress {
+/** A finalized passing quiz completes the topic; retries preserve earned progress. */
+export function retainQuizSubmissionProgress(previous: MultipleChoiceProgress, finalizedScore: Score): MultipleChoiceProgress {
   assertScore(finalizedScore);
-  const bestScore =
-    previous.bestScore === null
-      ? { ...finalizedScore }
-      : finalizedScore.earned > previous.bestScore.earned
-        ? { ...finalizedScore }
-        : previous.bestScore;
-
-  // canMarkComplete is true if candidate passed OR previous was already eligible
-  const canMarkComplete = previous.canMarkComplete || passes(finalizedScore);
-
-  return {
-    bestScore,
-    completed: previous.completed,
-    nextTopicAvailable: previous.nextTopicAvailable,
-    canMarkComplete,
-  };
-}
-
-/**
- * UC-14: Mark a passed multiple-choice topic complete.
- * Requires that the learner has an eligible passing score (canMarkComplete is true).
- * Unlocks the next topic and marks this topic complete.
- */
-export function markQuizTopicComplete(
-  progress: MultipleChoiceProgress,
-): MultipleChoiceProgress {
-  if (!progress.canMarkComplete) {
-    throw new Error(
-      "A passing score of at least 60/100 is required before marking this topic complete.",
-    );
-  }
-
-  return {
-    ...progress,
-    completed: true,
-    nextTopicAvailable: true,
-  };
+  const bestScore = betterScore(finalizedScore, previous.bestScore) ? { ...finalizedScore } : previous.bestScore;
+  const completed = previous.completed || Boolean(bestScore && passes(bestScore));
+  return { bestScore, completed, nextTopicAvailable: previous.nextTopicAvailable || completed };
 }

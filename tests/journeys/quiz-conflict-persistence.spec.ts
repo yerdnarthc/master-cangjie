@@ -1,11 +1,14 @@
 import { test, expect } from "@playwright/test";
 import pg from "pg";
 import { LEARNER } from "../../modules/learner-account/adapters/development-session.ts";
+import { resetMilestone, resetLearnerToStart } from "./reset.ts";
 
 test("advances two real persisted conflicts and restores the chosen draft", async ({
   page,
 }) => {
   const topic = "getting-started-with-cangjie";
+  await resetMilestone();
+  await resetLearnerToStart();
   const url = process.env.TEST_DATABASE_URL;
   if (!url || !new URL(url).pathname.endsWith("_test"))
     throw new Error("A dedicated test database is required.");
@@ -26,7 +29,7 @@ test("advances two real persisted conflicts and restores the chosen draft", asyn
   await page
     .getByRole("button", { name: "Open development workspace" })
     .click();
-  await expect(page.locator("input[type=radio]").first()).toBeVisible();
+  await expect(page.getByRole("radio").first()).toBeVisible();
   const setup = await page.evaluate(async (topic) => {
     const endpoint = `/api/topics/${topic}/quiz`;
     const ws = await (await fetch(endpoint)).json();
@@ -35,7 +38,12 @@ test("advances two real persisted conflicts and restores the chosen draft", asyn
       const response = await fetch(`${endpoint}/draft`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ baseRevision: ws.draft.workRevision, answers }),
+      body: JSON.stringify({
+        attemptId: ws.currentAttempt.attemptId,
+        baseRevision: ws.draft.workRevision,
+        answers,
+        expectedLearnerId: ws.learnerId,
+      }),
       });
       if (!response.ok) throw new Error(`Save failed: ${response.status}`);
       return response.json();
@@ -67,8 +75,8 @@ test("advances two real persisted conflicts and restores the chosen draft", asyn
   await expect(
     page.getByRole("heading", { name: "Choose which answers to keep" }),
   ).toHaveCount(0);
-  const [id, value] = Object.entries(setup.original)[0];
+  const [id] = Object.entries(setup.original)[0];
   await expect(
-    page.locator(`input[name="q-${id}"][value="${value}"]`),
+    page.locator(`#q-${id} [role="radio"]`).nth(0),
   ).toBeChecked();
 });

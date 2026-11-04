@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import {
   evaluateQuiz,
   retainQuizSubmissionProgress,
-  markQuizTopicComplete,
   type QuizDefinition,
   type MultipleChoiceProgress,
 } from "./quiz-evaluation.ts";
@@ -27,7 +26,9 @@ describe("Multiple-choice domain evaluation (UC-13)", () => {
     expect(result.correctCount).toBe(10);
     expect(result.unansweredCount).toBe(0);
     expect(
-      result.questionResults.every((r) => r.correct && r.earned === 10),
+      result.questionResults.every(
+        (r) => r.correct && r.earned === 10 && r.correctChoiceId === "b",
+      ),
     ).toBe(true);
   });
 
@@ -68,6 +69,11 @@ describe("Multiple-choice domain evaluation (UC-13)", () => {
     expect(result.passed).toBe(false);
     expect(result.correctCount).toBe(5);
     expect(result.unansweredCount).toBe(1);
+    expect(result.questionResults[6]).toMatchObject({
+      selectedChoiceId: "a",
+      correct: false,
+      correctChoiceId: "b",
+    });
   });
 
   it("unanswered questions earn zero and are counted explicitly", () => {
@@ -78,7 +84,11 @@ describe("Multiple-choice domain evaluation (UC-13)", () => {
     expect(result.correctCount).toBe(0);
     expect(
       result.questionResults.every(
-        (r) => !r.correct && r.earned === 0 && r.selectedChoiceId === null,
+        (r) =>
+          !r.correct &&
+          r.earned === 0 &&
+          r.selectedChoiceId === null &&
+          r.correctChoiceId === "b",
       ),
     ).toBe(true);
   });
@@ -99,64 +109,23 @@ describe("Multiple-choice domain evaluation (UC-13)", () => {
   });
 });
 
-describe("Multiple-choice topic progression (UC-13 & UC-14)", () => {
-  const initialProgress: MultipleChoiceProgress = {
-    bestScore: null,
-    completed: false,
-    nextTopicAvailable: false,
-    canMarkComplete: false,
-  };
-
-  it("UC-13-AC2: a passing score enables canMarkComplete but does NOT complete the topic or unlock the next topic", () => {
-    const afterPass = retainQuizSubmissionProgress(initialProgress, {
-      earned: 70,
-      possible: 100,
-    });
-    expect(afterPass.bestScore).toEqual({ earned: 70, possible: 100 });
-    expect(afterPass.canMarkComplete).toBe(true);
-    expect(afterPass.completed).toBe(false);
-    expect(afterPass.nextTopicAvailable).toBe(false);
-  });
-
-  it("UC-14-AC1: selecting Mark complete completes the topic and unlocks the next", () => {
-    const afterPass = retainQuizSubmissionProgress(initialProgress, {
-      earned: 60,
-      possible: 100,
-    });
-    const finalized = markQuizTopicComplete(afterPass);
-    expect(finalized.completed).toBe(true);
-    expect(finalized.nextTopicAvailable).toBe(true);
-  });
-
-  it("UC-14-AC2: a retained passing score followed by a failing retry still permits completion", () => {
-    const firstPass = retainQuizSubmissionProgress(initialProgress, {
-      earned: 70,
-      possible: 100,
-    });
-    expect(firstPass.bestScore).toEqual({ earned: 70, possible: 100 });
-
-    // Lower retry (40/100)
-    const afterFailingRetry = retainQuizSubmissionProgress(firstPass, {
-      earned: 40,
-      possible: 100,
-    });
-    expect(afterFailingRetry.bestScore).toEqual({ earned: 70, possible: 100 }); // Retains 70/100
-    expect(afterFailingRetry.canMarkComplete).toBe(true); // Still eligible!
-
-    // Learner can still mark complete!
-    const completed = markQuizTopicComplete(afterFailingRetry);
-    expect(completed.completed).toBe(true);
-    expect(completed.nextTopicAvailable).toBe(true);
-  });
-
-  it("rejects Mark complete if the topic has no passing submission", () => {
-    const failedAttempt = retainQuizSubmissionProgress(initialProgress, {
-      earned: 50,
-      possible: 100,
-    });
-    expect(failedAttempt.canMarkComplete).toBe(false);
-    expect(() => markQuizTopicComplete(failedAttempt)).toThrow(
-      /passing score of at least 60\/100 is required/,
-    );
-  });
+describe("Automatic multiple-choice progression", () => {
+ const initial = { bestScore: null, completed: false, nextTopicAvailable: false };
+ it.each([60,100])("automatically completes on %s/100", earned => {
+  expect(retainQuizSubmissionProgress(initial,{earned,possible:100})).toMatchObject({ completed:true, nextTopicAvailable:true });
+ });
+ it("leaves a failing submission incomplete", () => {
+  expect(retainQuizSubmissionProgress(initial,{earned:50,possible:100})).toMatchObject({ completed:false,nextTopicAvailable:false });
+ });
+ it("preserves prior passing completion on lower retry and replay", () => {
+  const passed=retainQuizSubmissionProgress(initial,{earned:70,possible:100});
+  const lower=retainQuizSubmissionProgress(passed,{earned:40,possible:100});
+  expect(lower).toMatchObject({bestScore:{earned:70,possible:100},completed:true,nextTopicAvailable:true});
+  expect(retainQuizSubmissionProgress(lower,{earned:40,possible:100})).toEqual(lower);
+ });
+ it("retains normalized best and earlier ties",()=> {
+  const previous=retainQuizSubmissionProgress(initial,{earned:80,possible:100});
+  expect(retainQuizSubmissionProgress(previous,{earned:90,possible:150}).bestScore).toEqual({earned:80,possible:100});
+  expect(retainQuizSubmissionProgress(previous,{earned:40,possible:50}).bestScore).toEqual({earned:80,possible:100});
+ });
 });
