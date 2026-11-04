@@ -2426,3 +2426,37 @@ textarea {
     transition: none !important;
   }
 }
+
+/* Historical quiz review: static answer evidence, distinct from editable choices. */
+.quiz-review main { max-width: 1080px; margin-inline: auto; padding-bottom: 3rem; }
+.quiz-review-summary { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:start; gap:1rem 2rem; margin-block:1.5rem; }
+.quiz-review-summary h1 { margin-top:0; }
+.quiz-review-summary > .muted { flex-basis:100%; }
+.quiz-review-nav { display:flex; flex-wrap:wrap; align-items:center; gap:.75rem; margin-block:1.5rem; }
+.quiz-review-nav button { min-height:44px; display:inline-flex; align-items:center; justify-content:center; gap:.5rem; }
+.quiz-review-nav [aria-current="page"] { border-color:var(--primary); background:color-mix(in oklab,var(--primary) 12%,var(--card)); }
+.quiz-review-questions { display:grid; gap:1.5rem; }
+.quiz-review-question { scroll-margin-top:5rem; min-width:0; overflow-wrap:anywhere; }
+.quiz-review-question h3 { margin-top:0; line-height:1.6; }
+.quiz-review-outcome { display:flex; align-items:center; gap:.5rem; }
+.quiz-review-choices { list-style:none; padding:0; display:grid; gap:.75rem; }
+.quiz-review-choices li { display:flex; flex-wrap:wrap; justify-content:space-between; gap:.6rem 1rem; padding:1rem; border:1px solid var(--border); border-radius:var(--radius); background:var(--card); color:var(--foreground); }
+.quiz-review-choices li.is-selected { border-color:var(--primary); }
+.quiz-review-choices li.is-correct { background:color-mix(in oklab,var(--secondary) 10%,var(--card)); }
+.quiz-review-choice-labels { display:flex; flex-wrap:wrap; gap:.5rem 1rem; font-size:.85rem; }
+.quiz-review-explanation { margin-top:1.5rem; max-width:75ch; }
+.quiz-review-explanation h4 { margin-bottom:.5rem; }
+.quiz-best-access { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:1rem; margin-block:1rem; }
+.quiz-best-access h2 { margin:0; font-size:1rem; }
+.quiz-best-access p { margin:.5rem 0 0; }
+.quiz-best-access button,.quiz-topic-actions button,.quiz-topic-actions a { min-height:44px; white-space:normal; }
+.quiz-topic-actions .actions { flex-wrap:wrap; }
+.quiz-failure-dialog { margin:auto; max-width: min(34rem,calc(100vw - 2rem)); max-height:calc(100dvh - 2rem); overflow:auto; padding:clamp(1rem,4vw,2rem); color:var(--foreground); background:var(--card); border:1px solid var(--border); border-radius:var(--radius); box-shadow:0 12px 36px #0005; }
+.quiz-failure-dialog::backdrop { background:#0008; }
+.quiz-failure-dialog h2 { margin-top:0; }
+.quiz-failure-dialog .actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:.75rem; margin-top:1.5rem; }
+.quiz-failure-dialog button { min-height:44px; }
+@media(max-width:600px) { .quiz-review .topbar { flex-wrap:wrap; gap:.75rem; } .quiz-review-summary { padding:1rem; } .quiz-best-access button { width:100%; } }
+
+/* Keep automatic-completion feedback green in both themes without hue rotation. */
+.quiz-workspace .quiz-result-banner--passed { background:color-mix(in oklab,var(--secondary) 10%,var(--card)); }

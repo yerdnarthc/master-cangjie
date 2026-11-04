@@ -4,6 +4,7 @@ import LockedTopic from "../../../components/locked-topic";
 import RoadmapSignIn from "../../../components/roadmap-sign-in";
 import {
   application,
+  quizApplication,
   developmentSignInAvailable,
   optionalAuthenticatedActor,
 } from "../../../bootstrap/application";
@@ -40,5 +41,6 @@ export default async function Topic({
     lessonContent.listMetadata(),
   ]);
   if (!lesson) throw new Error(`Lesson content is missing for ${topicId}.`);
-  return <TopicLesson lesson={lesson} catalog={catalog} />;
+  const quizState = topic.activity === "quiz" ? await quizApplication.activityState(actor, topicId) : undefined;
+  return <TopicLesson lesson={lesson} catalog={catalog} quizState={quizState} />;
 }

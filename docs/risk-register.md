@@ -405,3 +405,7 @@ gap, not an approved preview exception or evidence of earned topic access. RISK-
 remains open: quiz authoring, maintainer content approval and learner validation
 still require evidence.
 See `content/lessons/README.md` for source/version scope and content ownership.
+
+### 2026-11-04 quiz best review and automatic completion
+
+The [verification record](development/quiz-best-review-verification.md) records passing static checks, production build, 63 domain tests, 38 scoped integration/orchestration tests and 53 Chromium journeys. It covers original-revision best review, immutable answer evidence, save-before-review races, retained progress, atomic passing completion/unlock, legacy backfill and lost-response Retry/submission recovery. Independent review findings were reproduced and fixed with browser regressions. These checks reduce the quiz portion of RISK-02; compiler/sandbox/provider behavior and broader launch evidence are unchanged. RISK-02 remains In progress.

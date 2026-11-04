@@ -1,3 +1,5 @@
+> Behavior update, 2026-11-04: the former passed-but-unmarked state and Mark complete action below are superseded by automatic passing completion and unlock. Current quiz behavior, best review and failure-dialog Retry are defined in [product](../../product.md) and [use cases](../../use-cases.md). The visual direction remains applicable.
+
 # MasterCangjie product design specification
 
 **Design context:** The shared visual direction is in the repository-root [DESIGN.md](../../../DESIGN.md), which Impeccable discovers for `apps/web`. Maintain shared visual rules there. This document retains product positioning, accessibility guidance, and quiz interaction guardrails; it does not override DESIGN.md or the authoritative product rules.

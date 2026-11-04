@@ -1,3 +1,5 @@
+import { readQuizEvidence, readBestQuizReview } from "./quiz-review.ts";
+import type { QuizActivityState, QuizBestReview, QuizBestSummary } from "../application/quiz-review.ts";
 import type pg from "pg";
 import { createHash, randomUUID } from "node:crypto";
 import { transaction } from "../../../infrastructure/persistence/connection.ts";
@@ -64,13 +66,13 @@ export type QuizSubmissionResult = {
   progress: {
     bestScore: Score | null;
     completed: boolean;
-    canMarkComplete: boolean;
     nextTopicAvailable: boolean;
     nextTopicId: string | null;
   };
 };
 
 export type QuizWorkspaceView = {
+  bestSubmission: QuizBestSummary | null;
   learnerId: string;
   topicId: string;
   quiz: PublicQuiz;
@@ -81,7 +83,6 @@ export type QuizWorkspaceView = {
   progress: {
     bestScore: Score | null;
     completed: boolean;
-    canMarkComplete: boolean;
     nextTopicAvailable: boolean;
     nextTopicId: string | null;
   };
@@ -99,6 +100,13 @@ export type QuizWorkspaceView = {
 
 export class PostgresQuizSubmissions {
   constructor(readonly pool: pg.Pool) {}
+
+  async activityState(actor: Actor, topicId: string): Promise<QuizActivityState> {
+    return transaction(this.pool, async c => { await lockActor(c, actor); return (await readQuizEvidence(c, actor, topicId)).state; });
+  }
+  async reviewBest(actor: Actor, topicId: string): Promise<QuizBestReview | null> {
+    return transaction(this.pool, async c => { await lockActor(c, actor); return readBestQuizReview(c, actor, topicId); });
+  }
 
   async saveDraft(
     actor: Actor,
@@ -194,16 +202,8 @@ export class PostgresQuizSubmissions {
         throw new OperationError(500, "The current quiz result could not be loaded.");
       }
 
-      const passingRows = await c.query(
-        "SELECT 1 FROM topic_submissions WHERE learner_id=$1 AND snapshot->>'topicId'=$2 AND state='finalized' AND (score->>'earned')::int >= 60 LIMIT 1",
-        [actor.learnerId, topicId],
-      );
-      const hasPassingSubmission =
-        p.completed ||
-        (p.best_score && passes(p.best_score)) ||
-        (passingRows.rowCount ?? 0) > 0;
-
       return {
+        bestSubmission: (await readQuizEvidence(c, actor, topicId)).state.bestSubmission,
         learnerId: actor.learnerId,
         topicId,
         quiz: publicQuiz(quiz),
@@ -214,7 +214,6 @@ export class PostgresQuizSubmissions {
         progress: {
           bestScore: p.best_score,
           completed: p.completed,
-          canMarkComplete: !p.completed && Boolean(hasPassingSubmission),
           nextTopicAvailable: !!next?.available,
           nextTopicId: next?.id ?? null,
         },
@@ -421,7 +420,6 @@ export class PostgresQuizSubmissions {
           progress: {
             bestScore: p.best_score,
             completed: p.completed,
-          canMarkComplete: !p.completed && Boolean(p.best_score && passes(p.best_score)),
             nextTopicAvailable: !!next?.available,
             nextTopicId: next?.id ?? null,
           },
@@ -529,6 +527,11 @@ export class PostgresQuizSubmissions {
         );
       }
 
+      if (passes(evaluation.score) || (progress.best_score && passes(progress.best_score))) {
+        await c.query("UPDATE learner_topic_progress SET completed=true WHERE learner_id=$1 AND topic_id=$2", [actor.learnerId, request.topicId]);
+        await c.query("UPDATE learner_topic_progress SET available=true WHERE learner_id=$1 AND topic_id=(SELECT id FROM topics WHERE position=(SELECT position+1 FROM topics WHERE id=$2))", [actor.learnerId, request.topicId]);
+      }
+
       const updatedProgress = (
         await c.query(
           "SELECT * FROM learner_topic_progress WHERE learner_id=$1 AND topic_id=$2",
@@ -543,11 +546,6 @@ export class PostgresQuizSubmissions {
         )
       ).rows[0];
 
-      // Eligible to mark complete if passes now or earlier best score passed
-      const canMarkComplete =
-        !updatedProgress.completed &&
-        (passes(evaluation.score) || passes(updatedProgress.best_score));
-
       return {
         submissionId: id,
         attemptId,
@@ -555,7 +553,6 @@ export class PostgresQuizSubmissions {
         progress: {
           bestScore: updatedProgress.best_score,
           completed: updatedProgress.completed,
-          canMarkComplete,
           nextTopicAvailable: !!next?.available,
           nextTopicId: next?.id ?? null,
         },
@@ -563,70 +560,4 @@ export class PostgresQuizSubmissions {
     });
   }
 
-  async markComplete(
-    actor: Actor,
-    topicId: string,
-  ): Promise<{
-    completed: boolean;
-    nextTopicAvailable: boolean;
-  }> {
-    return transaction(this.pool, async (c) => {
-      await lockActor(c, actor);
-
-      const p = (
-        await c.query(
-          "SELECT * FROM learner_topic_progress WHERE learner_id=$1 AND topic_id=$2 FOR UPDATE",
-          [actor.learnerId, topicId],
-        )
-      ).rows[0];
-
-      if (!p || !p.available) {
-        throw new OperationError(
-          403,
-          "Complete the preceding topic to unlock this activity.",
-        );
-      }
-
-      if (p.completed) {
-        // Already completed - idempotent
-        const next = (
-          await c.query(
-            "SELECT available FROM learner_topic_progress WHERE learner_id=$1 AND topic_id=(SELECT id FROM topics WHERE position=(SELECT position+1 FROM topics WHERE id=$2))",
-            [actor.learnerId, topicId],
-          )
-        ).rows[0];
-        return { completed: true, nextTopicAvailable: !!next?.available };
-      }
-
-      // Check whether passing evidence exists (best_score >= 60 or historical passing submission)
-      const passingRows = await c.query(
-        "SELECT 1 FROM topic_submissions WHERE learner_id=$1 AND snapshot->>'topicId'=$2 AND state='finalized' AND (score->>'earned')::int >= 60 LIMIT 1",
-        [actor.learnerId, topicId],
-      );
-      const hasPassingEvidence =
-        (p.best_score && passes(p.best_score)) ||
-        (passingRows.rowCount ?? 0) > 0;
-
-      if (!hasPassingEvidence) {
-        throw new OperationError(
-          400,
-          "A passing score of at least 60/100 is required before marking this topic complete.",
-        );
-      }
-
-      // Complete this topic
-      await c.query(
-        "UPDATE learner_topic_progress SET completed=true WHERE learner_id=$1 AND topic_id=$2",
-        [actor.learnerId, topicId],
-      );
-
-      // Unlock the next sequential topic
-      await c.query(
-        "UPDATE learner_topic_progress SET available=true WHERE learner_id=$1 AND topic_id=(SELECT id FROM topics WHERE position=(SELECT position+1 FROM topics WHERE id=$2))",
-        [actor.learnerId, topicId],
-      );
-
-      return { completed: true, nextTopicAvailable: true };
-    });
-  }
 }

@@ -1,6 +1,6 @@
 {
   "topicId": "getting-started-with-cangjie",
-  "revision": 1,
+  "revision": 2,
   "title": "Getting Started with Cangjie",
   "questions": [
     {
@@ -211,7 +211,7 @@
         }
       ],
       "correctChoiceId": "c",
-      "explanation": "Reading provides the foundational knowledge, but topic completion always requires completing the topic's assessment (passing the multiple-choice quiz and choosing \"Mark complete\", or submitting a passing coding solution)."
+      "explanation": "Reading provides the foundational knowledge, but topic completion always requires completing the topic's assessment (submitting a passing multiple-choice quiz or coding solution)."
     }
   ]
 }

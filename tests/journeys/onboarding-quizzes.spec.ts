@@ -11,7 +11,7 @@ const selectChoice = async (page: import("@playwright/test").Page, questionId: s
   await page.locator(`#q-${questionId} [role="radio"]`).nth(choiceOrder[choiceId]).click();
 };
 
-test("learner attempts quiz, sees incomplete warning, passes with >= 60, marks complete, and unlocks subsequent topics", async ({
+test("learner attempts quiz, sees incomplete warning, passes with >= 60, automatically completes, and unlocks subsequent topics", async ({
   page,
 }) => {
   // 1. Navigate to first topic activity
@@ -87,27 +87,9 @@ test("learner attempts quiz, sees incomplete warning, passes with >= 60, marks c
 
   await expect(page.getByText("70 / 100 (Passed!)")).toBeVisible();
 
-  // Invariant UC-13-AC2: Topic is NOT complete yet, but Mark complete button IS available
-  await expect(page.getByText("Passed · Awaiting completion")).toBeVisible();
-  await page.goto("/");
-  const firstTopicCard = page.locator(".topic-list li").filter({
-    has: page.getByRole("link", { name: "Getting Started with Cangjie", exact: true }),
-  });
-  await expect(firstTopicCard).toContainText("Passed · Awaiting completion");
-  const secondTopicCard = page.locator(".topic-list li").filter({
-    has: page.getByRole("heading", { name: "Installing the Cangjie Toolchain", exact: true }),
-  });
-  await expect(secondTopicCard).toContainText("Locked");
-  await expect(secondTopicCard).toContainText("Complete Getting Started with Cangjie to unlock this topic.");
-  await page.goto("/topics/getting-started-with-cangjie/activity");
-
-  const markCompleteBtn = page.getByRole("button", { name: "Mark complete" });
-  await expect(markCompleteBtn).toBeVisible();
-
-  // 4. Mark the topic complete (UC-14)
-  await markCompleteBtn.click();
+  // Passing finalization completes and unlocks without a second action.
   await expect(page.getByText("Topic completed!", { exact: true })).toBeVisible();
-
+  await expect(page.getByRole("button", { name: "Mark complete" })).toHaveCount(0);
   // Continue to the next topic
   const nextLink = page.getByRole("link", { name: "Continue to next topic" });
   await expect(nextLink).toBeVisible();
@@ -124,7 +106,7 @@ test("learner attempts quiz, sees incomplete warning, passes with >= 60, marks c
 
   // Open Topic 2 activity
   await page
-    .getByRole("link", { name: "Start multiple-choice activity" })
+    .getByRole("link", { name: "Start activity" })
     .click();
   await expect(page).toHaveURL(/installing-the-cangjie-toolchain\/activity$/);
   await expect(
@@ -159,7 +141,6 @@ test("learner attempts quiz, sees incomplete warning, passes with >= 60, marks c
   await expect(page.getByText("100 / 100 (Passed!)")).toBeVisible();
 
   // Mark Topic 2 complete
-  await page.getByRole("button", { name: "Mark complete" }).click();
   await expect(page.getByText("Topic completed!", { exact: true })).toBeVisible();
 
   // Navigate to Topic 3: Running the First Cangjie Program

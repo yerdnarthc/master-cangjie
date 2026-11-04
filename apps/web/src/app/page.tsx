@@ -61,9 +61,7 @@ export default async function Home() {
                     ? "locked"
                     : progress.completed
                       ? "completed"
-                      : progress.awaitingCompletion
-                        ? "awaiting"
-                        : "available";
+                      : "available";
                   if (!progress.available) {
                     const prerequisiteTitle = progress.prerequisiteTopicId
                       ? metadataById.get(progress.prerequisiteTopicId)?.title ?? progress.prerequisiteTopicId
@@ -91,9 +89,7 @@ export default async function Home() {
                       <p className={`topic-status topic-status--${topicState}`}>
                         {progress.completed
                           ? "Completed"
-                          : progress.awaitingCompletion
-                            ? "Passed · Awaiting completion"
-                            : "Available"}
+                          : "Available"}
                       </p>
                       <p>{lesson.introduction}</p>
                       <span className="muted topic-activity-kind">

@@ -1,6 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import QuizFailureDialog from "./quiz-failure-dialog";
+import { prepareQuizReviewNavigation } from "../lib/quiz-review-navigation";
+import type { QuizBestSummary } from "../../../../modules/topic-submission/application/quiz-review.ts";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion, type Variants } from "motion/react";
 import { ArrowLeft, ArrowRight, Check, CircleAlert, Eraser, LoaderCircle, RotateCcw, Save, X } from "lucide-react";
@@ -20,6 +24,7 @@ import { quizDrafts, quizRetryRequests, quizSubmissionRequests, type PendingQuiz
 import { reconcileQuizRetry } from "../lib/quiz-attempt-transition.ts";
 
 type QuizWorkspaceData = {
+  bestSubmission?: QuizBestSummary | null;
   learnerId: string;
   topicId: string;
   quiz: PublicQuiz;
@@ -30,7 +35,6 @@ type QuizWorkspaceData = {
   progress: {
     bestScore: Score | null;
     completed: boolean;
-    canMarkComplete: boolean;
     nextTopicAvailable: boolean;
     nextTopicId: string | null;
   };
@@ -73,7 +77,7 @@ function confirmedSubmission(value: QuizSubmissionResult): boolean {
       (result.selectedChoiceId === null || typeof result.selectedChoiceId === 'string') &&
       (result.correctChoiceId === undefined || typeof result.correctChoiceId === 'string') &&
       typeof result.explanation === 'string') &&
-    !!progress && typeof progress.completed === 'boolean' && typeof progress.canMarkComplete === 'boolean' &&
+    !!progress && typeof progress.completed === 'boolean' &&
     typeof progress.nextTopicAvailable === 'boolean' &&
     (progress.bestScore === null || (!!progress.bestScore && Number.isSafeInteger(progress.bestScore.earned) &&
       Number.isSafeInteger(progress.bestScore.possible) && progress.bestScore.possible > 0 &&
@@ -239,7 +243,11 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
   const [retrying, setRetrying] = useState(false);
   const [submissionButtonFeedback, setSubmissionButtonFeedback] = useState<Exclude<FlowButtonPhase, "idle"> | null>(null);
   const [pendingSubmission, setPendingSubmission] = useState<PendingQuizSubmission | null>(null);
-  const [completing, setCompleting] = useState<boolean>(false);
+  const router = useRouter();
+  const [reviewing, setReviewing] = useState(false);
+  const reviewInFlight = useRef(false);
+  const [failureDialog, setFailureDialog] = useState<QuizEvaluation | null>(null);
+  const failureShown = useRef<string | null>(null);
   const [submissionConfirmation, setSubmissionConfirmation] =
     useState<"incomplete" | "complete" | null>(null);
   const [evaluation, setEvaluation] = useState<QuizEvaluation | null>(null);
@@ -460,6 +468,7 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
         setSaveFeedback("idle");
         setSubmissionButtonFeedback(null);
         setSubmissionConfirmation(null);
+        setFailureDialog(null);
         setQuestionPage(0);
         restoreSubmitButtonFocus.current = false;
         pendingSnapshot.current = null;
@@ -467,6 +476,10 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
         automaticRetryBlock.current = null;
       }
       activeAttemptId.current = ws.currentAttempt.attemptId;
+      try {
+        const page = Number(sessionStorage.getItem(`quiz-page:${ws.learnerId}:${ws.currentAttempt.attemptId}`) ?? 0);
+        setQuestionPage(page === 1 ? 1 : 0);
+      } catch { /* Resume position is optional when storage is unavailable. */ }
       setData(ws);
       workRevision.current = ws.draft.workRevision;
       conflictRef.current = ws.conflict ?? null;
@@ -840,6 +853,7 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
     if (nextPage < 0 || nextPage >= pageCount || nextPage === questionPage) return;
     setSubmissionConfirmation(null);
     focusPageHeading.current = true;
+    if (data) { try { sessionStorage.setItem(`quiz-page:${data.learnerId}:${data.currentAttempt.attemptId}`, String(nextPage)); } catch {} }
     setQuestionPage(nextPage);
   };
   const reviewUnansweredQuestions = () => {
@@ -999,6 +1013,10 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
         ? currentWorkspace.currentSubmission?.evaluation ?? null
         : null);
       setData(currentWorkspace);
+      if (!result.evaluation.passed && failureShown.current !== result.submissionId) {
+        failureShown.current = result.submissionId;
+        setFailureDialog(result.evaluation);
+      }
       if (isInitialSubmission) {
         initialSubmissionSucceeded = true;
         setSubmissionButtonFeedback("success");
@@ -1037,7 +1055,7 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
 
   const handleRetry = async () => {
     if (!data || data.currentAttempt.state !== "submitted" || !data.currentAttempt.submissionId ||
-        retryInFlight.current || submissionInFlight.current || pendingSubmissionRef.current || completing) return;
+        retryInFlight.current || submissionInFlight.current || pendingSubmissionRef.current || reviewInFlight.current) return;
 
     retryInFlight.current = true;
     setRetrying(true);
@@ -1092,6 +1110,7 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
       });
 
       const workspace = transition.workspace;
+      if (workspace.currentAttempt.state === "answering") setFailureDialog(null);
       if (transition.storageWarning) setStorageWarning(STORAGE_WARNING);
       if (retryTimer.current) clearTimeout(retryTimer.current);
       retryTimer.current = null;
@@ -1106,6 +1125,7 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
       setSaveFeedback("idle");
       setSubmissionButtonFeedback(null);
       setSubmissionConfirmation(null);
+      setFailureDialog(null);
       setQuestionPage(0);
       setHasPendingDraftSave(false);
       pendingSnapshot.current = null;
@@ -1145,35 +1165,34 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
     }
   };
 
-  const handleMarkComplete = async () => {
-    if (!data) return;
-    setCompleting(true);
+  const handleReviewBest = async () => {
+    if (!data?.bestSubmission || reviewInFlight.current || submitting || retrying) return;
+    reviewInFlight.current = true;
+    setReviewing(true);
     setError("");
+    const learnerId = data.learnerId;
+    const attemptId = data.currentAttempt.attemptId;
+    let navigating = false;
     try {
-      const result = await request<{
-        completed: boolean;
-        nextTopicAvailable: boolean;
-      }>(`/api/topics/${encodeURIComponent(topicId)}/complete`, {});
-      setData((prev) =>
-        prev
-          ? {
-              ...prev,
-              progress: {
-                ...prev.progress,
-                completed: result.completed,
-                nextTopicAvailable: result.nextTopicAvailable,
-                canMarkComplete: false,
-              },
-            }
-          : prev,
-      );
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Could not mark topic complete.",
-      );
-    } finally {
-      setCompleting(false);
-    }
+      const result = await prepareQuizReviewNavigation({
+        read: () => ({ identity: `${data.learnerId}:${activeAttemptId.current}`, blocked: !!conflictRef.current || !!pendingSubmissionRef.current || submissionInFlight.current, submitted: data.currentAttempt.state === "submitted", dirty: dirty.current || !!pendingSnapshot.current }),
+        settle: async () => { await waitForDraftSave(localWrites.current.then(() => {})); if (draftSaveSettled.current) await waitForDraftSave(draftSaveSettled.current); },
+        flush: async () => {
+          const previousRevision = workRevision.current;
+          const previousPending = pendingSnapshot.current;
+          const clean = await save(true);
+          // Replaying a pending snapshot can succeed while newer choices remain dirty.
+          // An advanced confirmed revision is progress; drain the remaining choices next.
+          return clean || (!conflictRef.current && (workRevision.current !== previousRevision || (!!previousPending && !pendingSnapshot.current)));
+        },
+      });
+      if (result !== "ready") throw new Error("Your latest answers haven't been saved yet. Resolve any draft conflict or save error, then try review again.");
+      const current = await request<{learnerId:string;currentAttempt:QuizAttempt}>(`/api/topics/${encodeURIComponent(topicId)}/quiz/activity-state`);
+      if (current.learnerId !== learnerId || current.currentAttempt?.attemptId !== attemptId || activeAttemptId.current !== attemptId) throw new Error("Your account or attempt changed. Reload before opening review.");
+      router.push(`/topics/${topicId}/activity/review`);
+      navigating = true;
+    } catch (err) { setError(err instanceof Error ? err.message : "Could not save your answers. Try again before opening review."); }
+    finally { if (!navigating) { reviewInFlight.current = false; setReviewing(false); } }
   };
 
   if (unauthorized) {
@@ -1181,7 +1200,7 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
       <div className="quiz-workspace">
         <main className="entry-panel">
           <h1>Multiple-choice Activity</h1>
-          <p className="quiz-activity-kind">MasterCangjie · Development Session</p>
+          <p className="quiz-activity-kind">MasterCangjie ? Development Session</p>
           <p>Open the development learner workspace to practice this multiple-choice activity.</p>
           <p>
             <Link href={`/topics/${topicId}`}>Back to lesson</Link>
@@ -1290,6 +1309,9 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
           </section>
         )}
 
+        {data?.bestSubmission && <section className="panel quiz-best-access" aria-label="Best submission review"><div><h2>Best submission</h2><p>Your saved result stays available while you practice.</p></div><button type="button" disabled={reviewing || submitting || retrying || !!pendingSubmission} onClick={() => void handleReviewBest()}>{reviewing ? "Saving before review…" : `Review best submission · ${data.bestSubmission.score.earned}/${data.bestSubmission.score.possible}`}</button></section>}
+        {failureDialog && <QuizFailureDialog evaluation={failureDialog} completed={!!data?.progress.completed} busy={retrying} error={error} onClose={() => { setFailureDialog(null); requestAnimationFrame(() => pageHeadingRef.current?.focus()); }} onRetry={() => void handleRetry()} />}
+
         {/* Post-submission score banner */}
         {evaluation && (
           <div
@@ -1311,24 +1333,6 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
                 </p>
               </div>
 
-              {/* UC-14: Mark complete action */}
-              {data?.progress.canMarkComplete && !data?.progress.completed && (
-                <div className="quiz-completion-action">
-                  <p>
-                    You passed! Mark this topic complete to unlock the next
-                    topic:
-                  </p>
-                  <button
-                    type="button"
-                    className="primary quiz-complete-button"
-                    onClick={handleMarkComplete}
-                    disabled={completing}
-                  >
-                    {completing ? "Completing topic…" : <><Check size={16} aria-hidden="true" /> Mark complete</>}
-                  </button>
-                </div>
-              )}
-
               {data?.progress.completed && (
                 <div className="quiz-completion-action">
                   <p className="quiz-topic-completed">
@@ -1342,28 +1346,10 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
                         : "/"
                     }
                   >
-                    Continue to next topic <ArrowRight size={16} aria-hidden="true" />
+                    {data?.progress.nextTopicId ? "Continue to next topic" : "Back to roadmap"} <ArrowRight size={16} aria-hidden="true" />
                   </Link>
                 </div>
               )}
-            </div>
-          </div>
-        )}
-
-        {!evaluation && data?.progress.canMarkComplete && !data.progress.completed && (
-          <div className="panel quiz-result-banner quiz-result-banner--passed">
-            <div className="quiz-result-content">
-              <div className="quiz-completion-action">
-                <p>Your best score still qualifies. Mark this topic complete to unlock the next topic:</p>
-                <button
-                  type="button"
-                  className="primary quiz-complete-button"
-                  onClick={handleMarkComplete}
-                  disabled={completing}
-                >
-                  {completing ? "Completing topic…" : <><Check size={16} aria-hidden="true" /> Mark complete</>}
-                </button>
-              </div>
             </div>
           </div>
         )}
@@ -1377,7 +1363,7 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
                   className="activity-link"
                   href={data.progress.nextTopicId ? `/topics/${data.progress.nextTopicId}` : "/"}
                 >
-                  Continue to next topic <ArrowRight size={16} aria-hidden="true" />
+                  {data?.progress.nextTopicId ? "Continue to next topic" : "Back to roadmap"} <ArrowRight size={16} aria-hidden="true" />
                 </Link>
               </div>
             </div>
@@ -1438,10 +1424,10 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
                 }}
               />
             </nav>
-            {(data?.progress.bestScore || data?.progress.completed || data?.progress.canMarkComplete) && (
+            {(data?.progress.bestScore || data?.progress.completed) && (
               <div className="quiz-sidebar-summary">
                 {data?.progress.bestScore && <p>Best score <strong>{data.progress.bestScore.earned}/{data.progress.bestScore.possible}</strong></p>}
-                {data?.progress.completed ? <p className="quiz-progress--complete">Topic completed</p> : data?.progress.canMarkComplete ? <p className="quiz-progress--awaiting">Passed · Awaiting completion</p> : null}
+                {data?.progress.completed ? <p className="quiz-progress--complete">Topic completed</p> : null}
               </div>
             )}
           </aside>
@@ -1520,7 +1506,7 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
                     </AnimatePresence>
                     {draftChanged && (
                       <span className="quiz-draft-status" id={draftStatusId}>
-                        Draft changed · not evaluated
+                        Draft changed ? not evaluated
                       </span>
                     )}
                     <AnimatePresence initial={false}>
@@ -1546,7 +1532,7 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
                             size="sm"
                             className="quiz-clear-answer h-11 min-h-11 gap-1.5 px-3"
                             aria-label={`Clear answer to Question ${idx + 1}`}
-                            disabled={submittedAttempt || !!conflict || submitting || !!pendingSubmission}
+                            disabled={reviewing || submittedAttempt || !!conflict || submitting || !!pendingSubmission}
                             onClick={(event) => handleClear(q.id, event.currentTarget)}
                           >
                             <Eraser aria-hidden="true" />
@@ -1571,7 +1557,7 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
                     name={`q-${q.id}`}
                     value={selected ?? ""}
                     onChange={(choice) => handleSelect(q.id, choice as string)}
-                    disabled={submittedAttempt || !!conflict || submitting || !!pendingSubmission}
+                    disabled={reviewing || submittedAttempt || !!conflict || submitting || !!pendingSubmission}
                     options={q.choices.map((choice) => {
                       const isChosen = selected === choice.id;
                       const isSubmitted = !!feedback && submittedChoiceId === choice.id;
@@ -1808,7 +1794,7 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
                 aria-label={saveStatus.includes("Saving") || saveStatus.includes("Retrying") ? "Saving draft" : "Save draft"}
                 title="Save draft"
                 onClick={() => void save(true)}
-                disabled={submittedAttempt || !!conflict || submitting || !!pendingSubmission || saving.current || !dirty.current}
+                disabled={reviewing || submittedAttempt || !!conflict || submitting || !!pendingSubmission || saving.current || !dirty.current}
               >
                 {saveFeedback === "saving"
                   ? <LoaderCircle className="quiz-save-spinner" size={19} aria-hidden="true" />
@@ -1824,23 +1810,10 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
                   label={pendingSubmission ? "Recover submission" : "Submit activity"}
                   loadingLabel="Evaluating..."
                   successLabel="Activity submitted"
-                  disabled={!!conflict && !pendingSubmission}
+                  disabled={reviewing || (!!conflict && !pendingSubmission)}
                   onClick={() => void handleSubmit(false)}
                 />
-              ) : (
-                <button
-                  ref={submitButtonRef}
-                  type="button"
-                  className="primary quiz-submit-button"
-                  onClick={() => void handleRetry()}
-                  disabled={retrying || submitting || completing || saving.current || !!conflict}
-                >
-                  {retrying
-                    ? <LoaderCircle className="quiz-save-spinner" size={18} aria-hidden="true" />
-                    : <RotateCcw size={18} aria-hidden="true" />}
-                  {retrying ? "Starting retry…" : "Retry"}
-                </button>
-              )}
+              ) : null}
           </div>
         </div>
           </section>

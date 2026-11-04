@@ -49,7 +49,6 @@ async function createSubmittedAttempt(options: {
     answers,
     assessmentRevision: quiz.revision,
   });
-  if (options.complete) await quizSubmissions.markComplete(actor, topicId);
   await pool.query(
     "UPDATE quiz_drafts SET answers=$3, work_revision=$4 WHERE learner_id=$1 AND topic_id=$2",
     [actor.learnerId, topicId, answers, options.workRevision ?? 0],
@@ -255,7 +254,7 @@ it("rejects retry from an unknown learner, a locked topic, or a different submis
     quizSubmissions.startRetry({ learnerId: randomUUID() }, topicId, source),
   ).rejects.toThrow(/unknown learner/i);
   await expect(
-    quizSubmissions.startRetry(actor, "installing-the-cangjie-toolchain", {
+    quizSubmissions.startRetry(actor, "running-the-first-cangjie-program", {
       ...source,
       sourceSubmissionId: randomUUID(),
     }),

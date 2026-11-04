@@ -49,7 +49,6 @@ export type Workspace = {
   progress: {
     bestScore: Score | null;
     completed: boolean;
-    canMarkComplete?: boolean;
     nextTopicAvailable: boolean;
     nextTopicId?: string | null;
   };

@@ -1,3 +1,5 @@
+import QuizTopicActions from "./quiz-topic-actions";
+import type { QuizActivityState } from "../../../../modules/topic-submission/application/quiz-review.ts";
 import Link from "next/link";
 import Markdown from "react-markdown";
 import type { Lesson, TopicMetadata } from "../../../../modules/roadmap/application/onboarding.ts";
@@ -6,9 +8,11 @@ import ThemeModeToggle from "./theme-mode-toggle";
 export default function TopicLesson({
   lesson,
   catalog,
+  quizState,
 }: {
   lesson: Lesson;
   catalog: TopicMetadata[];
+  quizState?: QuizActivityState;
 }) {
   const globalPosition = catalog.findIndex((topic) => topic.id === lesson.id);
   const categoryLessons = catalog.filter((topic) => topic.categoryId === lesson.categoryId);
@@ -127,15 +131,9 @@ export default function TopicLesson({
                     Test your understanding with a 10-question multiple-choice
                     activity.
                   </p>
-                  <Link
-                    className="activity-link"
-                    href={`/topics/${lesson.id}/activity`}
-                  >
-                    Start multiple-choice activity
-                  </Link>
+                  {quizState && <QuizTopicActions topicId={lesson.id} initialState={quizState} />}
                   <p className="muted">
-                    Passing requires at least 60/100 and then selecting Mark
-                    complete.
+                    A score of at least 60/100 completes this topic and unlocks the next one.
                   </p>
                 </>
               )}

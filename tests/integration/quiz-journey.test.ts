@@ -181,7 +181,7 @@ it('acknowledges an identical stale quiz draft replay and accepts a newer snapsh
   expect(finalWorkspace.draft).toEqual({ answers: latestSnapshot, workRevision: 2 });
 });
 
-it('tests the complete multiple-choice workflow: draft, submit, retry retention, and explicit completion unlocking next topic', async () => {
+it('tests the complete multiple-choice workflow: draft, submit, retry retention, and automatic passing completion unlocking next topic', async () => {
   const actor = await freshFixture(pool);
   const topic1 = 'getting-started-with-cangjie';
   const topic2 = 'installing-the-cangjie-toolchain';
@@ -191,7 +191,6 @@ it('tests the complete multiple-choice workflow: draft, submit, retry retention,
   expect(ws1.quiz.topicId).toBe(topic1);
   expect(ws1.quiz.questions.length).toBe(10);
   expect(ws1.progress.completed).toBe(false);
-  expect(ws1.progress.canMarkComplete).toBe(false);
   expect(ws1.progress.nextTopicAvailable).toBe(false);
 
   // Invariant: public quiz conceals correctChoiceId and explanation
@@ -259,11 +258,9 @@ it('tests the complete multiple-choice workflow: draft, submit, retry retention,
   expect(failResult.evaluation.score).toEqual({ earned: 50, possible: 100 });
   expect(failResult.evaluation.passed).toBe(false);
   expect(failResult.progress.completed).toBe(false);
-  expect(failResult.progress.canMarkComplete).toBe(false);
   expect(failResult.progress.nextTopicAvailable).toBe(false);
 
   // Cannot mark complete with failing score
-  await expect(quizSubmissions.markComplete(actor, topic1)).rejects.toThrow(/A passing score of at least 60\/100 is required/i);
 
   // 4. Submit passing answer sheet (7 correct = 70/100 -> passes)
   const passingAnswers: Record<string, string> = {};
@@ -293,13 +290,11 @@ it('tests the complete multiple-choice workflow: draft, submit, retry retention,
 
   expect(passResult.evaluation.score).toEqual({ earned: 70, possible: 100 });
   expect(passResult.evaluation.passed).toBe(true);
-  // CRITICAL INVARIANT UC-13-AC2: Passing does NOT complete topic or unlock next topic yet!
-  expect(passResult.progress.completed).toBe(false);
-  expect(passResult.progress.nextTopicAvailable).toBe(false);
-  expect(passResult.progress.canMarkComplete).toBe(true);
+  // Passing finalization completes and unlocks atomically.
+  expect(passResult.progress.completed).toBe(true);
+  expect(passResult.progress.nextTopicAvailable).toBe(true);
 
   // 5. Retry with a lower score (4 correct = 40/100 -> fails)
-  // INVARIANT INV-14, INV-15: Retained best score remains 70/100, and canMarkComplete remains true!
   const lowerAnswers: Record<string, string> = {};
   for (let i = 0; i < 4; i++) {
     lowerAnswers[fullQuiz1.questions[i].id] = fullQuiz1.questions[i].correctChoiceId;
@@ -319,10 +314,6 @@ it('tests the complete multiple-choice workflow: draft, submit, retry retention,
   const lowerAttempt = await quizSubmissions.workspace(actor, topic1);
   expect(lowerAttempt.draft.answers).toEqual({});
   expect(lowerAttempt.progress.bestScore).toEqual({ earned: 70, possible: 100 });
-  expect(lowerAttempt.progress.canMarkComplete).toBe(true);
-  const completeDuringRetry = await quizSubmissions.markComplete(actor, topic1);
-  expect(completeDuringRetry.completed).toBe(true);
-  expect(completeDuringRetry.nextTopicAvailable).toBe(true);
   const retryResult = await quizSubmissions.submit(actor, {
     topicId: topic1,
     attemptId: lowerRetry.attemptId,
@@ -334,23 +325,16 @@ it('tests the complete multiple-choice workflow: draft, submit, retry retention,
   expect(retryResult.evaluation.score).toEqual({ earned: 40, possible: 100 });
   expect(retryResult.progress.bestScore).toEqual({ earned: 70, possible: 100 });
   expect(retryResult.progress.completed).toBe(true);
-  expect(retryResult.progress.canMarkComplete).toBe(false);
   expect(retryResult.progress.nextTopicAvailable).toBe(true);
 
   // 6. Repeating Mark complete is idempotent after completing during Retry.
-  const completeResult = await quizSubmissions.markComplete(actor, topic1);
-  expect(completeResult.completed).toBe(true);
-  expect(completeResult.nextTopicAvailable).toBe(true);
 
   // Calling mark complete again is idempotent
-  const repeatComplete = await quizSubmissions.markComplete(actor, topic1);
-  expect(repeatComplete.completed).toBe(true);
 
   // 7. Verify Topic 2 is now unlocked!
   const ws2 = await quizSubmissions.workspace(actor, topic2);
   expect(ws2.quiz.topicId).toBe(topic2);
   expect(ws2.progress.completed).toBe(false);
-  expect(ws2.progress.canMarkComplete).toBe(false);
 
   // Submit Topic 2 quiz with 10/10 = 100/100
   const fullQuiz2 = await readQuiz(topic2);
@@ -367,10 +351,8 @@ it('tests the complete multiple-choice workflow: draft, submit, retry retention,
     assessmentRevision: ws2.currentAttempt.assessmentRevision,
   });
   expect(t2Result.evaluation.score).toEqual({ earned: 100, possible: 100 });
-  expect(t2Result.progress.canMarkComplete).toBe(true);
 
   // Mark Topic 2 complete
-  await quizSubmissions.markComplete(actor, topic2);
 
   // Verify Topic 3 (Hello World coding topic) is now unlocked for this learner!
   const t3Progress = (await pool.query('SELECT available FROM learner_topic_progress WHERE learner_id=$1 AND topic_id=$2', [actor.learnerId, 'running-the-first-cangjie-program'])).rows[0];

@@ -58,3 +58,9 @@ Accepted on 2026-11-04: use **shadcn/ui with 21st.dev** for UI components and **
 ### Adoption checks for future implementation
 
 Before significant UI work, follow the [frontend research and implementation workflow](docs/development/frontend-workflow.md) for reference research, access limits, candidate evaluation, a proposed direction, native implementation, and browser/Playwright verification. Maintain approval and license evidence in the [component register](docs/development/frontend-components.md). These are contribution requirements, not evidence of a completed migration.
+
+## Best quiz review and result dialogs (2026-11-04)
+
+The historical review extends the existing quiz theme with static answer rows, explicit Your answer/Correct answer labels, explanations, and two five-question groups. Choices have no editable or disabled-input semantics. Review navigation remains keyboard accessible and keeps readable text in both themes.
+
+The confirmed-failure dialog uses the native modal surface with explicit centering, focus containment, Escape dismissal and focus restoration to the current questions. Its two actions are Review answers and Retry. Persistent Retry stays on the topic page; product/domain documents own automatic completion and retained-progress behavior. Blue and green surface mixes use Oklab to avoid hue rotation into pink against light cards. Destructive button colors are unchanged.

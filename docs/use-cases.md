@@ -84,7 +84,7 @@ These rules apply wherever the corresponding behavior occurs, even when a use ca
 2. **Learning order:** Follow the exact topic order in the product's MVP roadmap, within and across categories. Categories have no separate assessment. Only the first onboarding topic is initially unlocked. Completing the last topic finishes the path without unlocking an additional topic.
 3. **Coding scores:** Every passed test earns 10 points, including hidden tests. Individual runs award no points. Batch results apply to the code version evaluated. Topic percentages use all possible test points, including those belonging to unattempted problems.
 4. **Multiple-choice scores:** Every activity has exactly ten questions with one correct answer each. Correct answers earn 10 points; incorrect and unanswered questions earn zero. A score of at least 60/100 passes.
-5. **Finalization:** A coding topic is complete only after a passing topic submission. A multiple-choice topic requires a passing submission and then "Mark complete." Merely reading a lesson, passing one individual test, or receiving a problem score does not complete a topic.
+5. **Finalization:** A coding topic is complete only after a passing topic submission. A passing finalized multiple-choice submission automatically completes the topic and unlocks its immediate successor. Merely reading a lesson, passing one individual test, or receiving a problem score does not complete a topic.
 6. **Historical achievements:** Retain the highest finalized topic percentage, preserving its original earned and possible points. Compare percentages even when possible points change; keep the earlier best on a tie. Retain all earned completion, unlocks, and solved achievements. Show a lower current attempt separately. A passing multiple-choice score remains eligible for completion even after a later failed retry.
 7. **Incomplete work:** Unattempted coding problems and unanswered multiple-choice questions may contribute zero after explicit incomplete-submission confirmation. Attempted coding work needing evaluation cannot be finalized using zero as a substitute for a missing service result.
 8. **Evaluation failures:** Compilation, runtime, and timeout outcomes in learner code are evaluated failures. A service failure is unevaluated: do not award an assumed score, replace a prior recorded score, or finalize an affected submission.
@@ -99,8 +99,7 @@ These rules apply wherever the corresponding behavior occurs, even when a use ca
 | All tests pass in a batch validation | Current problem points and retained solved achievement | No topic completion until topic submission. |
 | Coding topic submission is below 60% | Finalized attempt; update best score if higher | No new completion or unlock. Existing achievements remain. |
 | Coding topic submission reaches 60% | Finalized attempt and best-score comparison | Complete topic and unlock the next one. Hello World has one test, so only 10/10 passes. |
-| Multiple-choice submission reaches 60/100 | Finalized attempt and best-score comparison | Show "Mark complete"; do not newly unlock the next topic yet. |
-| Learner marks an eligible multiple-choice topic complete | Retain its passing score | Complete topic and unlock the next one. |
+| Multiple-choice submission reaches 60/100 | Finalized attempt and best-score comparison | Complete and unlock the immediate successor atomically. |
 | A later attempt has a lower score | Record current outcome without reducing best | No loss of solved status, completion, or unlocks. |
 | A service fails to return an evaluation | No assumed evaluation score | Affected submission remains unfinalized; previous progress remains. |
 
@@ -190,7 +189,7 @@ These rules apply wherever the corresponding behavior occurs, even when a use ca
 
 **Alternatives and failures:** A locked topic explains its prerequisite without opening its lessons, summaries, or activity. A new learner is directed to onboarding. After the last topic, show path completion without inventing another prerequisite or topic.
 
-**Successful outcome:** The learner can distinguish what is completed, available, awaiting "Mark complete," and locked.
+**Successful outcome:** The learner can distinguish what is completed, available, and locked.
 
 **Acceptance criteria**
 
@@ -406,16 +405,16 @@ These rules apply wherever the corresponding behavior occurs, even when a use ca
 2. Before every submission, offer a final confirmation with a way to return to the editable answers. If questions are unanswered, explain that they earn zero.
 3. Evaluate the submitted selections: ten points per correct answer and zero per incorrect or unanswered question.
 4. Record per-question results and the finalized activity/topic attempt score out of 100, comparing it with the retained best score. After evaluation is confirmed, show the submitted choice, correct choice, correctness, and explanation for each question. The submitted attempt is read-only afterward.
-5. If the learner has earned at least 60/100, offer UC-14. Do not newly unlock the next topic merely because this submission passed.
+5. If the submission passes, complete the topic and unlock its immediate successor in the same transaction (UC-14). Otherwise preserve prior completion/access and show a dismissible failure dialog offering Review answers or direct Retry.
 
-**Alternatives and failures:** Choosing to review or cancelling leaves selections editable. Unanswered questions are allowed after explicit confirmation. If an answer-draft conflict is open, reject submission and preserve both versions until the learner resolves it; do not finalize an attempt that can no longer be recovered. A failed evaluation does not finalize an assumed result. A lower retry does not reduce best score or undo earlier completion, unlocks, or eligibility to mark complete.
+**Alternatives and failures:** Choosing to review or cancelling leaves selections editable. Unanswered questions are allowed after explicit confirmation. If an answer-draft conflict is open, reject submission and preserve both versions until the learner resolves it; do not finalize an attempt that can no longer be recovered. A failed evaluation does not finalize an assumed result. A lower retry does not reduce best score or undo earlier completion or unlocks.
 
-**Successful outcome:** Submitted selections and a confirmed score are recorded; the learner knows whether marking complete is available.
+**Successful outcome:** Submitted selections and a confirmed score are recorded; passing results complete and unlock automatically.
 
 **Acceptance criteria**
 
 - **UC-13-AC1:** Six correct answers yield 60/100 and pass; five yield 50/100 and fail. Incorrect and unanswered questions earn zero, with no partial credit.
-- **UC-13-AC2:** A first passing submission does not unlock the next topic before UC-14.
+- **UC-13-AC2:** A passing finalized submission atomically completes the topic and unlocks its immediate successor without another learner action.
 - **UC-13-AC3:** Recorded submitted answers remain unchanged by later edits, and repeated clicks do not finalize duplicate attempts.
 - **UC-13-AC4:** Reveal each correct choice and its explanation only after a confirmed evaluation; pre-submit quiz content does not include the answer key.
 - **UC-13-AC5:** A fully answered activity shows a final confirmation before evaluation and lets the learner return to the answers without submitting.
@@ -426,27 +425,23 @@ These rules apply wherever the corresponding behavior occurs, even when a use ca
 
 ### UC-14: Mark a passed multiple-choice topic complete
 
-**Primary actor:** Learner. **Trigger:** Select "Mark complete."  
-**Preconditions:** Signed in; topic is unlocked and has a finalized multiple-choice score of at least 60/100 from any retained attempt.
+**Superseded learner action, 2026-11-04:** There is no separate Mark complete step. This identifier now records the automatic progression consequence of UC-13; identifiers remain stable for traceability.
+
+**Trigger:** A multiple-choice submission finalizes with a passing percentage. **Preconditions:** Signed in; topic unlocked; genuine finalized passing evidence.
 
 **Main flow**
 
-1. Confirm the learner has an eligible passing submitted score.
-2. Mark the topic complete and preserve its retained best score.
-3. Unlock the next topic or show completed-path status for the last topic.
-4. Reflect the change on the roadmap and statistics.
+1. Within submission finalization, retain best evidence and mark the topic complete.
+2. Unlock the immediate next topic, or record completion without a successor at the end of the roadmap.
+3. Commit submission, attempt state, completion and unlock together. Replayed requests return the confirmed result and committed progress.
 
-**Alternatives and failures:** Without a passing submission, keep the action unavailable and direct the learner to the activity. If the topic is already complete, repeated actions do not duplicate progress. A lower recent retry does not invalidate an earlier passing submission. The learner is not required to prove every lesson was read.
-
-**Successful outcome:** The topic is complete and progression advances exactly once.
+**Alternatives and failures:** A first failing submission leaves the topic incomplete and next topic locked. Later lower results preserve earlier completion/access. Failed transactions commit none of these changes. Existing valid passing-but-unmarked quiz evidence is migrated without changing drafts or historical scores.
 
 **Acceptance criteria**
 
-- **UC-14-AC1:** A passing score without this action leaves the next topic locked; selecting it completes the topic and unlocks the next.
-- **UC-14-AC2:** A retained 70/100 followed by a 40/100 retry still permits completion.
-- **UC-14-AC3:** This operation applies to the first two onboarding topics, Identifiers, Unit, and Nothing, and is not a replacement for their scored assessment.
-
-**Source:** Product → Onboarding completion, Optional reading and completion, Progress after retry; passed-but-unmarked edge case.
+- **UC-14-AC1:** A score of 60/100 completes and unlocks automatically; 50/100 on a first attempt does neither.
+- **UC-14-AC2:** A retained 70/100 followed by 40/100 stays complete and unlocked.
+- **UC-14-AC3:** Applies to every multiple-choice topic, including onboarding; reading or unfinalized draft work never awards completion.
 
 ### UC-15: Retry a topic activity
 
@@ -461,7 +456,7 @@ These rules apply wherever the corresponding behavior occurs, even when a use ca
 4. Record the new finalized outcome without rewriting earlier submissions.
 5. Increase the best score only if the new finalized score is higher. Preserve completion and unlocks in all cases.
 
-**Alternatives and failures:** An unfinalized attempt does not replace a finalized topic score. Manual batch-validation retries respect UC-09's cooldown. A failed retry cannot remove previously earned eligibility for UC-14 or require a completed topic to be marked complete again.
+**Alternatives and failures:** An unfinalized attempt does not replace a finalized topic score. Manual batch-validation retries respect UC-09's cooldown. A failed retry cannot remove previously earned completion or access.
 
 **Successful outcome:** The learner can practice repeatedly without losing earned progress.
 
@@ -472,7 +467,7 @@ These rules apply wherever the corresponding behavior occurs, even when a use ca
 - **UC-15-AC3:** A failed coding or multiple-choice retry does not reduce completed-topic or solved-problem achievements.
 - **UC-15-AC4:** If corrected content changes possible points, compare finalized percentages and preserve the original points: 80/100 remains the best after a 90/150 retry. Equal percentages retain the earlier best result.
 - **UC-15-AC5:** After a confirmed multiple-choice submission, Retry starts an empty, unsubmitted answer sheet (0/10 answered) and clears current-result feedback while retaining all finalized submissions and the best-score reference.
-- **UC-15-AC6:** A retained passing submission remains eligible for Mark complete during an unanswered retry; a completed topic stays complete and unlocked without another completion action.
+- **UC-15-AC6:** A completed topic remains complete and unlocked during an unanswered retry and after a lower finalized result.
 - **UC-15-AC7:** Replaying a confirmed Retry transition does not create another attempt or erase answers entered after the first transition.
 
 **Source:** Product → Topic selection, Progress after retry, Learner statistics.
@@ -548,7 +543,7 @@ These rules apply wherever the corresponding behavior occurs, even when a use ca
 **Acceptance criteria**
 
 - **UC-18-AC1:** Solved-problem counts require an all-tests-passed batch result and exclude individual runs and multiple-choice questions.
-- **UC-18-AC2:** A passed-but-unmarked multiple-choice topic is not counted as completed.
+- **UC-18-AC2:** A passing finalized multiple-choice submission counts as a completed topic automatically.
 - **UC-18-AC3:** A current 40% retry does not replace a retained 80% best in historical statistics.
 
 **Source:** Product → Learner statistics, Progress after retry; new-learner edge case.
@@ -712,7 +707,7 @@ The section names below refer to [product.md](product.md). A rule may be impleme
 | Ten points per test, individual runs without points, and problem scoring | UC-08, UC-09 |
 | Attempted versus unattempted work and incomplete-submission confirmation | UC-06, UC-07, UC-08, UC-09, UC-11, UC-13 |
 | Current-code evaluation, 60% topic threshold, and intentional test-count weighting | UC-09, UC-11 |
-| Ten-question activities, answer scoring, and explicit completion | UC-12, UC-13, UC-14, UC-23 |
+| Ten-question activities, answer scoring, and automatic completion | UC-12, UC-13, UC-14, UC-23 |
 | Validation cooldown, overlapping actions, and duplicate prevention | UC-08, UC-09, UC-11, UC-13, UC-14 |
 | Best-score retention, current versus historical results, and permanent unlocks | UC-11, UC-13, UC-14, UC-15, UC-18 |
 | Exact output matching, permitted diagnostics, and accessible difference feedback | UC-09, UC-10, UC-23 |
@@ -734,6 +729,14 @@ Examples:
 - **Implement UC-07:** Edit and preserve code drafts, including changed-since-validation status and offline/conflict behavior defined by UC-16 and UC-17.
 - **Implement UC-09:** Batch validation and its scores, cooldown, visibility rules, failure handling, and solved achievement; not the entire online editor or topic submission flow.
 - **Implement UC-11:** Coding-topic submission, current-work evaluation, incomplete-work handling, final scoring, and progression, using UC-09 for required validation.
-- **Implement UC-14:** The explicit completion action for passed multiple-choice topics; scoring the answers belongs to UC-13.
+- **Implement UC-14:** Automatic completion/unlock within UC-13 finalization; the former explicit learner action is superseded.
 
 Use these references to scope later work. This catalog does not prescribe implementation order, technologies, interfaces, storage, or deployment.
+
+### Additional review and navigation acceptance (2026-11-04)
+
+- **UC-05-AC-review:** Start before any persisted attempt; Continue for an unfinished attempt. With finalized history, show Review best submission and score, plus Retry only when the current attempt is submitted. Reading the lesson creates no draft.
+- **UC-13-AC8:** Newly confirmed failure shows a dismissible dialog explaining the actual progression consequence and offering Review answers or direct Retry. Prior earned access remains available after lower retries. Ordinary restored history does not reopen the dialog.
+- **UC-15-AC8:** Retry from the topic or failure dialog uses the current submitted attempt, even if the best submission is older. Duplicate/lost responses recover one successor without clearing later choices.
+- **UC-16-AC-review:** Save current answers before navigating to best review; failures/conflicts preserve work and prevent that navigation. Return through Continue restores the answering attempt.
+- **UC-24-AC-review:** Best review uses the original assessment revision and recorded result, offers static choices and question navigation, and never rescales scores or reveals another learner's evidence.

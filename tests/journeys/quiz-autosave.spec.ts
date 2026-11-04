@@ -156,6 +156,7 @@ test("keeps a completion error visible when a pending quiz save succeeds", async
       topicId: topic,
       quiz: { topicId: topic, revision: 1, title: "Quiz", questions },
       draft: { answers: {}, workRevision: 0 },
+      bestSubmission: { submissionId: "earlier-best", score: { earned: 100, possible: 100 }, submittedAt: "2026-11-04T00:00:00Z" },
       progress: {
         bestScore: { earned: 100, possible: 100 },
         completed: false,
@@ -165,7 +166,7 @@ test("keeps a completion error visible when a pending quiz save succeeds", async
       },
     },
   }));
-  await page.route(`**/api/topics/${topic}/complete`, (route) =>
+  await page.route(`**/api/topics/${topic}/quiz/activity-state`, (route) =>
     route.fulfill({ status: 503, json: { error: "Temporary outage." } }),
   );
   await page.route(`**/api/topics/${topic}/quiz/draft`, async (route) => {
@@ -177,7 +178,7 @@ test("keeps a completion error visible when a pending quiz save succeeds", async
   await page.goto(`/topics/${topic}/activity`);
   const login = page.getByRole("button", { name: "Open development workspace" });
   if (await login.isVisible()) await login.click();
-  await page.getByRole("button", { name: "Mark complete" }).click();
+  await page.getByRole("button", { name: /Review best submission/ }).click();
   await expect(page.locator("main .panel.error"))
     .toContainText("Temporary outage.");
 

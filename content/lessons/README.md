@@ -71,10 +71,7 @@ sources, or activity content. Reading a handout does not award a score or
 complete a topic.
 
 The first topic is initially available. Later topics become available only
-through the existing completion rules. A passed multiple-choice topic remains
-available and appears as awaiting completion until the learner selects
-“Mark complete.” Coding topics complete through their passing finalized
-submission. Persistent resume location is a separate feature and is not part
+through the existing completion rules. A passing finalized multiple-choice submission automatically completes its topic and unlocks the next topic, as does a passing finalized coding submission. Persistent resume location is a separate feature and is not part
 of this storage change.
 
 Sources were checked on 2026-11-02. The official 1.0.0 introductory guide
