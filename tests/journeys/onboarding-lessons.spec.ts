@@ -24,9 +24,9 @@ test('reads the first unlocked handout and opens its activity', async ({ page })
   await expect(page).toHaveURL(new RegExp(first + '$'));
   await expect(page.getByRole('heading', { name: 'Meet Cangjie', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Summary', exact: true })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Start multiple-choice activity' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Start activity' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Mark complete', exact: true })).toHaveCount(0);
-  await page.getByRole('link', { name: 'Start multiple-choice activity' }).click();
+  await page.getByRole('link', { name: 'Start activity' }).click();
   await expect(page).toHaveURL(/getting-started-with-cangjie\/activity$/);
   await expect(page.getByRole('button', { name: 'Submit activity' })).toBeVisible();
 });
@@ -70,7 +70,7 @@ test('locked topics hide handouts and activities on the roadmap and direct route
   await expect(page.getByRole('heading', { name: 'Installing the Cangjie Toolchain', exact: true })).toBeVisible();
   await expect(page.getByText('Complete Getting Started with Cangjie to unlock this topic.')).toBeVisible();
   await expect(page.getByRole('article', { name: 'Lesson handout' })).toHaveCount(0);
-  await expect(page.getByRole('link', { name: 'Start multiple-choice activity' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Start activity' })).toHaveCount(0);
   await expect(page.getByText('cjc -v', { exact: false })).toHaveCount(0);
 
   const apiRequests: string[] = [];
