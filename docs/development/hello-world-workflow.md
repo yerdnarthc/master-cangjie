@@ -1,6 +1,6 @@
 # Hello World Coding Workflow Runbook & Evidence
 
-This document records the exact runtime environment, pinned components, database roles, execution procedures, and verification evidence for the MasterCangjie Hello World milestone per [2026-11-01-hello-world-integration.md](../superpowers/plans/2026-11-01-hello-world-integration.md).
+This document is the repeatable runbook for the MasterCangjie Hello World milestone. It records the runtime environment, pinned components, database roles, execution procedures, and verification evidence.
 
 The [independent verification of commit c5ea8d6](hello-world-verification.md)
 preserves the original audit and records the completed recovery follow-up. The
