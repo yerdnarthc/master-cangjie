@@ -132,6 +132,7 @@ test("keeps answers across both pages and submits them together", async ({ page 
   await page.getByRole("button", { name: /Submit anyway/ }).click();
   await expect(page.locator("#q-q5").getByText("Mistake", { exact: true })).toBeVisible();
   expect(submittedAnswers).toMatchObject({ q0: "a", q5: "a" });
+  await page.getByRole("dialog").getByRole("button", { name: "Review answers", exact: true }).click();
   await page.getByRole("link", { name: /Questions 1 to 5/ }).click();
   await expect(page.locator("#q-q0").getByText("Mistake", { exact: true })).toBeVisible();
 });
@@ -141,9 +142,8 @@ test("keeps submitted answers read-only until Retry starts a blank attempt", asy
   const secondAttemptId = "00000000-0000-4000-8000-000000000002";
   const progress = {
     bestScore: { earned: 80, possible: 100 },
-    completed: false,
-    canMarkComplete: true,
-    nextTopicAvailable: false,
+    completed: true,
+    nextTopicAvailable: true,
     nextTopicId: "next-topic",
   };
   let attemptId = firstAttemptId;
@@ -206,9 +206,6 @@ test("keeps submitted answers read-only until Retry starts a blank attempt", asy
     serverDraft = { answers: {}, workRevision: serverDraft.workRevision + 1 };
     return route.fulfill({ json: { attemptId: secondAttemptId, workRevision: serverDraft.workRevision } });
   });
-  await page.route(`**/api/topics/${topic}/complete`, route =>
-    route.fulfill({ json: { completed: true, nextTopicAvailable: true } }),
-  );
 
   await page.goto(`/topics/${topic}/activity`);
   const open = page.getByRole("button", { name: "Open development workspace" });
@@ -227,10 +224,9 @@ test("keeps submitted answers read-only until Retry starts a blank attempt", asy
   await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Submit retry" })).toHaveCount(0);
 
-  await page.getByRole("link", { name: /Questions 6 to 10/ }).click();
   await page.context().setOffline(true);
   await page.getByRole("button", { name: "Retry" }).click();
-  await expect(page.getByText("Connect to the internet before starting Retry.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("dialog").getByRole("alert")).toHaveText("Connect to the internet before starting Retry.");
   expect(retryBody).toBeNull();
   await page.context().setOffline(false);
   await page.getByRole("button", { name: "Retry" }).click();
@@ -249,8 +245,7 @@ test("keeps submitted answers read-only until Retry starts a blank attempt", asy
   await expect(page.getByText("Latest submission result", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Mistake", { exact: true })).toHaveCount(0);
   await expect(page.locator(".quiz-sidebar")).toContainText("80");
-  await expect(page.getByRole("button", { name: "Mark complete" })).toBeVisible();
-  await page.getByRole("button", { name: "Mark complete" }).click();
+  await expect(page.getByRole("button", { name: "Mark complete" })).toHaveCount(0);
   await expect(page.getByText("Topic completed!", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: /Continue to next topic/ })).toHaveAttribute("href", "/topics/next-topic");
 
