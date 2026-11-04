@@ -9,3 +9,6 @@ are tracked in the [risk register](docs/risk-register.md).
 
 The [coding content scaffold](content/coding/README.md) organizes future problem
 items by topic and provides an unauthored problem/assessment template.
+
+Frontend contributions follow the [research and implementation workflow](docs/development/frontend-workflow.md),
+the shared [design system](DESIGN.md), and the [component register](docs/development/frontend-components.md).

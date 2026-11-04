@@ -1,6 +1,7 @@
 import Link from "next/link";
 import Markdown from "react-markdown";
 import type { Lesson, TopicMetadata } from "../../../../modules/roadmap/application/onboarding.ts";
+import ThemeModeToggle from "./theme-mode-toggle";
 
 export default function TopicLesson({
   lesson,
@@ -12,20 +13,22 @@ export default function TopicLesson({
   const globalPosition = catalog.findIndex((topic) => topic.id === lesson.id);
   const categoryLessons = catalog.filter((topic) => topic.categoryId === lesson.categoryId);
   const categoryPosition = categoryLessons.findIndex((topic) => topic.id === lesson.id);
+  const categoryIndex = [...new Set(catalog.map((topic) => topic.categoryId))].indexOf(lesson.categoryId);
   const previous = catalog[globalPosition - 1];
   const next = catalog[globalPosition + 1];
 
   return (
-    <div className="workspace-shell lesson-shell">
+    <div className={`workspace-shell lesson-shell lesson-page lesson-page--category-${categoryIndex % 4}`}>
       <header className="topbar">
         <Link href="/">MasterCangjie</Link>
         <span className="muted">{lesson.categoryTitle}</span>
+        <ThemeModeToggle />
       </header>
       <main id="lesson-main">
-        <p className="eyebrow">
-          {lesson.categoryTitle} / Topic {categoryPosition + 1} of {categoryLessons.length}
-        </p>
         <h1>{lesson.title}</h1>
+        <p className="lesson-position">
+          {lesson.categoryTitle} <span aria-hidden="true">/</span> Topic {categoryPosition + 1} of {categoryLessons.length}
+        </p>
         <div className="lesson-introduction">
           <Markdown>{lesson.introduction}</Markdown>
         </div>
@@ -95,7 +98,6 @@ export default function TopicLesson({
               className="panel"
               aria-labelledby="activity-heading"
             >
-              <p className="eyebrow">Put it into practice</p>
               <h2 id="activity-heading">
                 {lesson.activity === "coding"
                   ? lesson.id === "running-the-first-cangjie-program"

@@ -74,6 +74,10 @@ _Avoid_: Activity, topic
 A particular edition of the content and scoring criteria against which learner work is evaluated.
 _Avoid_: Code version, learner attempt
 
+**Quiz attempt**:
+A learner's answering or submitted lifecycle instance for a multiple-choice activity. An answering attempt has an editable answer sheet; a submitted attempt is read-only, and a voluntary Retry starts a new empty attempt.
+_Avoid_: Evaluation attempt, multiple-choice submission when referring to editable work
+
 ## Work and evaluation
 
 **Activity draft**:

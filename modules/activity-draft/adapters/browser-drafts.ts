@@ -18,6 +18,7 @@ export type PendingRequest = {
   operationId?: string;
 };
 export type QuizSubmissionRequest = {
+  attemptId?: string;
   requestKey: string;
   answers: Record<string, string>;
   assessmentRevision: number;
@@ -29,9 +30,33 @@ export type PendingQuizSubmission = {
   owner: string;
   leaseUntil: number;
 };
+export type QuizRetryIntent = Readonly<{
+  sourceSubmissionId: string;
+  expectedAttemptId: string;
+  baseRevision: number;
+}>;
+export type QuizRetryReceipt = Readonly<{ attemptId: string; workRevision: number }>;
+export type PendingQuizRetry = Readonly<{
+  key: string;
+  learnerId: string;
+  topicId: string;
+  intent: QuizRetryIntent;
+  receipt?: QuizRetryReceipt;
+}>;
 const key = (learnerId: string, problemId: string) =>
   JSON.stringify([learnerId, problemId]);
+const quizProblemId = (topicId: string, tabId: string) => `quiz:${topicId}:${tabId}`;
+const quizDraftKey = (learnerId: string, topicId: string, tabId: string, attemptId: string | null) =>
+  JSON.stringify([learnerId, quizProblemId(topicId, tabId), attemptId ?? "legacy"]);
+const quizSubmissionKey = (learnerId: string, topicId: string, attemptId: string) =>
+  key(learnerId, `quiz-submit:${topicId}:${attemptId}`);
+const legacyQuizSubmissionKey = (learnerId: string, topicId: string) =>
+  key(learnerId, `quiz-submit:${topicId}`);
+const quizRetryKey = (learnerId: string, topicId: string, sourceSubmissionId: string) =>
+  key(learnerId, `quiz-retry:${topicId}:${sourceSubmissionId}`);
 export type QuizDraftSnapshot = {
+  /** Null only for a pre-attempt pending save whose original hash must be replayed unchanged. */
+  attemptId: string | null;
   baseRevision: number;
   answers: Record<string, string>;
 };
@@ -40,6 +65,8 @@ export type QuizLocalDraft = {
   learnerId: string;
   topicId: string;
   tabId: string;
+  /** Null means this local row has not yet been safely associated with a server attempt. */
+  attemptId: string | null;
   answers: Record<string, string>;
   baseRevision: number;
   dirty: boolean;
@@ -49,6 +76,7 @@ type BrowserDatabase = Dexie & {
   drafts: EntityTable<LocalDraft, "key">;
   requests: EntityTable<PendingRequest, "key">;
   quizDrafts: EntityTable<QuizLocalDraft, "key">;
+  quizRetryRequests: EntityTable<PendingQuizRetry, "key">;
 };
 let database: BrowserDatabase | undefined;
 
@@ -73,10 +101,11 @@ function migrateLegacyQuizDraft(draft: LocalDraft): QuizLocalDraft | undefined {
   const answers = parseLegacyAnswers(draft.source);
   if (!answers) return undefined;
   return {
-    key: draft.key,
+    key: quizDraftKey(draft.learnerId, parts[1], parts[2], null),
     learnerId: draft.learnerId,
     topicId: parts[1],
     tabId: parts[2],
+    attemptId: null,
     answers,
     baseRevision: draft.baseRevision,
     dirty: draft.dirty,
@@ -108,21 +137,70 @@ function db() {
           await drafts.delete(legacy.key);
         }
       });
+    database
+      .version(3)
+      .stores({
+        drafts: "key,learnerId",
+        requests: "key,learnerId",
+        quizDrafts: "key,learnerId,topicId,tabId,attemptId",
+        quizRetryRequests: "key,learnerId,topicId",
+      })
+      .upgrade(async (transaction) => {
+        const quizDrafts = transaction.table("quizDrafts");
+        const existingRows = await quizDrafts.toArray() as Array<QuizLocalDraft & { attemptId?: string | null }>;
+        for (const row of existingRows) {
+          const attemptId = row.attemptId ?? null;
+          const scopedKey = quizDraftKey(row.learnerId, row.topicId, row.tabId, attemptId);
+          if (row.key === scopedKey && row.attemptId === attemptId) continue;
+          await quizDrafts.delete(row.key);
+          await quizDrafts.put({ ...row, key: scopedKey, attemptId });
+        }
+      });
   }
   return database;
 }
 export const quizDrafts = {
-  async read(learnerId: string, topicId: string, tabId: string): Promise<QuizLocalDraft | undefined> {
-    return db().quizDrafts.get(key(learnerId, `quiz:${topicId}:${tabId}`));
+  async read(
+    learnerId: string,
+    topicId: string,
+    tabId: string,
+    attemptId: string,
+    isLegacyAttempt: boolean,
+  ): Promise<QuizLocalDraft | undefined> {
+    const database = db();
+    const activeKey = quizDraftKey(learnerId, topicId, tabId, attemptId);
+    return database.transaction("rw", database.quizDrafts, async () => {
+      const active = await database.quizDrafts.get(activeKey);
+      if (active) return active;
+      if (!isLegacyAttempt) return undefined;
+      const unboundKey = quizDraftKey(learnerId, topicId, tabId, null);
+      const unbound = await database.quizDrafts.get(unboundKey);
+      if (!unbound) return undefined;
+      const rebound: QuizLocalDraft = { ...unbound, key: activeKey, attemptId };
+      await database.quizDrafts.delete(unboundKey);
+      await database.quizDrafts.put(rebound);
+      return rebound;
+    });
+  },
+  async readObsolete(
+    learnerId: string,
+    topicId: string,
+    tabId: string,
+    activeAttemptId: string,
+  ): Promise<QuizLocalDraft[]> {
+    const rows = await db().quizDrafts.where("learnerId").equals(learnerId).toArray();
+    return rows.filter(row => row.topicId === topicId && row.tabId === tabId &&
+      row.attemptId !== activeAttemptId && (row.dirty || !!row.pendingSave));
   },
   async writeCurrent(
     learnerId: string,
     topicId: string,
     tabId: string,
+    attemptId: string,
     current: { answers: Record<string, string>; baseRevision: number; dirty: boolean },
   ): Promise<void> {
     const database = db();
-    const storageKey = key(learnerId, `quiz:${topicId}:${tabId}`);
+    const storageKey = quizDraftKey(learnerId, topicId, tabId, attemptId);
     await database.transaction("rw", database.quizDrafts, async () => {
       const previous = await database.quizDrafts.get(storageKey);
       await database.quizDrafts.put({
@@ -130,6 +208,7 @@ export const quizDrafts = {
         learnerId,
         topicId,
         tabId,
+        attemptId,
         answers: { ...current.answers },
         baseRevision: current.baseRevision,
         dirty: current.dirty || !!previous?.pendingSave,
@@ -141,19 +220,21 @@ export const quizDrafts = {
     learnerId: string,
     topicId: string,
     tabId: string,
+    activeAttemptId: string,
     proposed: QuizDraftSnapshot,
   ): Promise<QuizDraftSnapshot> {
     const database = db();
-    const storageKey = key(learnerId, `quiz:${topicId}:${tabId}`);
+    const storageKey = quizDraftKey(learnerId, topicId, tabId, activeAttemptId);
     return database.transaction("rw", database.quizDrafts, async () => {
       const existing = await database.quizDrafts.get(storageKey);
       if (existing?.pendingSave) return existing.pendingSave;
-      const pendingSave = { baseRevision: proposed.baseRevision, answers: { ...proposed.answers } };
+      const pendingSave = { ...proposed, answers: { ...proposed.answers } };
       await database.quizDrafts.put({
         key: storageKey,
         learnerId,
         topicId,
         tabId,
+        attemptId: activeAttemptId,
         answers: existing?.answers ?? { ...proposed.answers },
         baseRevision: existing?.baseRevision ?? proposed.baseRevision,
         dirty: true,
@@ -166,11 +247,12 @@ export const quizDrafts = {
     learnerId: string,
     topicId: string,
     tabId: string,
+    activeAttemptId: string,
     request: QuizDraftSnapshot,
     workRevision: number,
   ): Promise<QuizLocalDraft | undefined> {
     const database = db();
-    const storageKey = key(learnerId, `quiz:${topicId}:${tabId}`);
+    const storageKey = quizDraftKey(learnerId, topicId, tabId, activeAttemptId);
     return database.transaction("rw", database.quizDrafts, async () => {
       const existing = await database.quizDrafts.get(storageKey);
       if (!existing) return undefined;
@@ -189,18 +271,19 @@ export const quizDrafts = {
     learnerId: string,
     topicId: string,
     tabId: string,
+    activeAttemptId: string,
     request: QuizDraftSnapshot,
   ): Promise<void> {
     const database = db();
-    const storageKey = key(learnerId, `quiz:${topicId}:${tabId}`);
+    const storageKey = quizDraftKey(learnerId, topicId, tabId, activeAttemptId);
     await database.transaction("rw", database.quizDrafts, async () => {
       const existing = await database.quizDrafts.get(storageKey);
       if (!existing || !sameQuizSnapshot(existing.pendingSave, request)) return;
       await database.quizDrafts.put({ ...existing, dirty: true, pendingSave: null });
     });
   },
-  async clear(learnerId: string, topicId: string, tabId: string): Promise<void> {
-    await db().quizDrafts.delete(key(learnerId, `quiz:${topicId}:${tabId}`));
+  async clear(learnerId: string, topicId: string, tabId: string, attemptId: string): Promise<void> {
+    await db().quizDrafts.delete(quizDraftKey(learnerId, topicId, tabId, attemptId));
   },
 };
 
@@ -214,7 +297,7 @@ function sameQuizSnapshot(
   first: QuizDraftSnapshot | null | undefined,
   second: QuizDraftSnapshot,
 ): boolean {
-  return !!first && first.baseRevision === second.baseRevision &&
+  return !!first && first.attemptId === second.attemptId && first.baseRevision === second.baseRevision &&
     sameAnswerMaps(first.answers, second.answers);
 }
 
@@ -237,24 +320,55 @@ export const browserDrafts = {
 
 // A single account/topic slot is shared by tabs. Claim and release are atomic.
 export const quizSubmissionRequests = {
-  async read(learnerId: string, topicId: string): Promise<PendingQuizSubmission | null> {
-    const entry = await db().requests.get(key(learnerId, `quiz-submit:${topicId}`));
-    return entry ? parsePendingQuizSubmission(entry.body) : null;
-  },
-  async claim(learnerId: string, topicId: string, request: QuizSubmissionRequest, baseRevision: number, owner: string): Promise<{ pending: PendingQuizSubmission; created: boolean }> {
+  async read(
+    learnerId: string,
+    topicId: string,
+    activeAttemptId: string,
+    isLegacyAttempt: boolean,
+  ): Promise<PendingQuizSubmission | null> {
     const database = db();
-    const problemId = `quiz-submit:${topicId}`;
+    const scopedKey = quizSubmissionKey(learnerId, topicId, activeAttemptId);
+    return database.transaction("rw", database.requests, async () => {
+      const current = await database.requests.get(scopedKey);
+      if (current) return parsePendingQuizSubmission(current.body);
+      if (!isLegacyAttempt) return null;
+      const legacy = await database.requests.get(legacyQuizSubmissionKey(learnerId, topicId));
+      if (!legacy) return null;
+      const problemId = `quiz-submit:${topicId}:${activeAttemptId}`;
+      const rebound = { ...legacy, key: scopedKey, problemId };
+      await database.requests.delete(legacy.key);
+      await database.requests.put(rebound);
+      return parsePendingQuizSubmission(rebound.body);
+    });
+  },
+  async readAll(learnerId: string, topicId: string): Promise<PendingQuizSubmission[]> {
+    const rows = await db().requests.where("learnerId").equals(learnerId).toArray();
+    return rows
+      .filter(row => row.problemId === `quiz-submit:${topicId}` || row.problemId.startsWith(`quiz-submit:${topicId}:`))
+      .map(row => parsePendingQuizSubmission(row.body));
+  },
+  async claim(
+    learnerId: string,
+    topicId: string,
+    activeAttemptId: string,
+    request: QuizSubmissionRequest,
+    baseRevision: number,
+    owner: string,
+  ): Promise<{ pending: PendingQuizSubmission; created: boolean }> {
+    const database = db();
+    const problemId = `quiz-submit:${topicId}:${activeAttemptId}`;
+    const storageKey = quizSubmissionKey(learnerId, topicId, activeAttemptId);
     return database.transaction('rw', database.requests, async () => {
-      const existing = await database.requests.get(key(learnerId, problemId));
+      const existing = await database.requests.get(storageKey);
       if (existing) return { pending: parsePendingQuizSubmission(existing.body), created: false };
       const pending: PendingQuizSubmission = { request, baseRevision, phase: 'preparing', owner, leaseUntil: Date.now() + 30000 };
-      await database.requests.add({ key: key(learnerId, problemId), learnerId, problemId, url: `/api/topics/${encodeURIComponent(topicId)}/quiz/submit`, body: serializePendingQuizSubmission(pending) });
+      await database.requests.add({ key: storageKey, learnerId, problemId, url: `/api/topics/${encodeURIComponent(topicId)}/quiz/submit`, body: serializePendingQuizSubmission(pending) });
       return { pending, created: true };
     });
   },
-  async acquire(learnerId: string, topicId: string, requestKey: string, owner: string): Promise<{ kind: 'gone' | 'busy' | 'owned' | 'ready'; pending?: PendingQuizSubmission }> {
+  async acquire(learnerId: string, topicId: string, activeAttemptId: string, requestKey: string, owner: string): Promise<{ kind: 'gone' | 'busy' | 'owned' | 'ready'; pending?: PendingQuizSubmission }> {
     const database = db();
-    const storageKey = key(learnerId, `quiz-submit:${topicId}`);
+    const storageKey = quizSubmissionKey(learnerId, topicId, activeAttemptId);
     return database.transaction('rw', database.requests, async () => {
       const entry = await database.requests.get(storageKey);
       if (!entry) return { kind: 'gone' };
@@ -267,9 +381,9 @@ export const quizSubmissionRequests = {
       return { kind: 'owned', pending: acquired };
     });
   },
-  async setReady(learnerId: string, topicId: string, requestKey: string, owner: string): Promise<boolean> {
+  async setReady(learnerId: string, topicId: string, activeAttemptId: string, requestKey: string, owner: string): Promise<boolean> {
     const database = db();
-    const storageKey = key(learnerId, `quiz-submit:${topicId}`);
+    const storageKey = quizSubmissionKey(learnerId, topicId, activeAttemptId);
     return database.transaction('rw', database.requests, async () => {
       const entry = await database.requests.get(storageKey);
       if (!entry) return false;
@@ -281,9 +395,9 @@ export const quizSubmissionRequests = {
       return true;
     });
   },
-  async releasePreparation(learnerId: string, topicId: string, requestKey: string, owner: string, cancel = false): Promise<boolean> {
+  async releasePreparation(learnerId: string, topicId: string, activeAttemptId: string, requestKey: string, owner: string, cancel = false): Promise<boolean> {
     const database = db();
-    const storageKey = key(learnerId, `quiz-submit:${topicId}`);
+    const storageKey = quizSubmissionKey(learnerId, topicId, activeAttemptId);
     return database.transaction('rw', database.requests, async () => {
       const entry = await database.requests.get(storageKey);
       if (!entry) return false;
@@ -294,13 +408,48 @@ export const quizSubmissionRequests = {
       return true;
     });
   },
-  async clear(learnerId: string, topicId: string, requestKey: string): Promise<void> {
+  async clear(learnerId: string, topicId: string, activeAttemptId: string, requestKey: string): Promise<void> {
     const database = db();
-    const storageKey = key(learnerId, `quiz-submit:${topicId}`);
+    const storageKey = quizSubmissionKey(learnerId, topicId, activeAttemptId);
     await database.transaction('rw', database.requests, async () => {
       const existing = await database.requests.get(storageKey);
       if (existing && existing.body.requestKey === requestKey) await database.requests.delete(storageKey);
     });
+  },
+};
+
+export const quizRetryRequests = {
+  async readAll(learnerId: string, topicId: string): Promise<PendingQuizRetry[]> {
+    const rows = await db().quizRetryRequests.where("learnerId").equals(learnerId).toArray();
+    return rows.filter(row => row.topicId === topicId);
+  },
+  async claim(learnerId: string, topicId: string, intent: QuizRetryIntent): Promise<PendingQuizRetry> {
+    const database = db();
+    const storageKey = quizRetryKey(learnerId, topicId, intent.sourceSubmissionId);
+    return database.transaction("rw", database.quizRetryRequests, async () => {
+      const existing = await database.quizRetryRequests.get(storageKey);
+      if (existing) {
+        if (existing.intent.expectedAttemptId !== intent.expectedAttemptId ||
+            existing.intent.baseRevision !== intent.baseRevision) {
+          throw new Error("A Retry for this submission is already being recovered.");
+        }
+        return existing;
+      }
+      const pending: PendingQuizRetry = { key: storageKey, learnerId, topicId, intent };
+      await database.quizRetryRequests.add(pending);
+      return pending;
+    });
+  },
+  async recordReceipt(learnerId: string, topicId: string, sourceSubmissionId: string, receipt: QuizRetryReceipt): Promise<void> {
+    const database = db();
+    const storageKey = quizRetryKey(learnerId, topicId, sourceSubmissionId);
+    await database.transaction("rw", database.quizRetryRequests, async () => {
+      const pending = await database.quizRetryRequests.get(storageKey);
+      if (pending) await database.quizRetryRequests.put({ ...pending, receipt });
+    });
+  },
+  async clear(learnerId: string, topicId: string, sourceSubmissionId: string): Promise<void> {
+    await db().quizRetryRequests.delete(quizRetryKey(learnerId, topicId, sourceSubmissionId));
   },
 };
 
@@ -312,7 +461,15 @@ function parseQuizSubmission(body: Record<string, unknown>): QuizSubmissionReque
       Object.values(answers).some(value => typeof value !== 'string')) {
     throw new Error('The saved submission could not be read. Your earlier result may still be recorded.');
   }
-  return { requestKey: body.requestKey, assessmentRevision: Number(body.assessmentRevision), answers: answers as Record<string, string> };
+  if (body.attemptId !== undefined && typeof body.attemptId !== 'string') {
+    throw new Error('The saved submission could not be read. Your earlier result may still be recorded.');
+  }
+  return {
+    attemptId: body.attemptId as string | undefined,
+    requestKey: body.requestKey,
+    assessmentRevision: Number(body.assessmentRevision),
+    answers: answers as Record<string, string>,
+  };
 }
 
 function serializePendingQuizSubmission(pending: PendingQuizSubmission): Record<string, unknown> {

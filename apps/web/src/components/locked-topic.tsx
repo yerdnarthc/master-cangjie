@@ -1,4 +1,5 @@
 import Link from "next/link";
+import ThemeModeToggle from "./theme-mode-toggle";
 
 export default function LockedTopic({
   topicTitle,
@@ -11,11 +12,11 @@ export default function LockedTopic({
     <div className="workspace-shell lesson-shell">
       <header className="topbar">
         <Link href="/">MasterCangjie</Link>
+        <ThemeModeToggle />
       </header>
-      <main>
-        <p className="eyebrow">Topic locked</p>
+      <main className="entry-panel locked-topic-panel">
         <h1>{topicTitle}</h1>
-        <p className="muted">Locked</p>
+        <p className="topic-lock-status">Locked</p>
         {prerequisiteTitle ? (
           <p>Complete {prerequisiteTitle} to unlock this topic.</p>
         ) : (

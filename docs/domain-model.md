@@ -73,12 +73,14 @@ A value object is defined by its contents rather than an independent business id
 | VO-07 | Passing threshold    | The exact fraction 3/5, representing 60%.                                                                                                                                                                  | Topic assessment rules                          |
 | VO-08 | Assessment reference | Topic and assessment revision identifying the exact assessment definition being used.                                                                                                                      | Draft context, evaluation, submission           |
 | VO-09 | Test result          | Test reference, evaluated outcome, and available output/diagnostic evidence. Permitted learner feedback depends on test visibility.                                                                        | Evaluation attempt                              |
-| VO-10 | Question result      | Question reference, submitted choice/unanswered value, correctness, and earned points of zero or ten.                                                                                                      | Multiple-choice submission                      |
+| VO-10 | Question result      | Question reference, submitted choice/unanswered value, correct choice ID, correctness, earned points of zero or ten, and explanation. The correct choice ID is present only in confirmed feedback.       | Multiple-choice submission                      |
 | VO-11 | Submission work      | The fixed code snapshots and evaluation references for a coding submission, or the fixed answer sheet for a multiple-choice submission.                                                                    | Topic submission                                |
 | VO-12 | Resume location      | Roadmap, topic, activity, and optional coding-problem location appropriate to the topic kind.                                                                                                              | Learner's working progress                      |
 | VO-13 | Draft candidate      | A preserved code or answer value and its work revision in a conflict. Candidate choice cannot imply an unrelated result is current.                                                                        | Draft conflict                                  |
 | VO-14 | Validation window    | Learner/problem pair, last manual batch request time, cooldown of at least five seconds, and pending-evaluation status. The same pair shares its window across tabs and devices.                           | Manual batch-validation eligibility             |
 | VO-15 | Feedback view        | The permitted presentation of a test result: visible output/differences and explanatory labels, or hidden-test pass/fail only. It carries no independent scoring authority.                                | Learner inspection of results                   |
+
+The confirmed question result includes the correct choice ID and explanation for review. Pre-submit quiz content omits the correct choice ID; the learner sees it only after the evaluation is confirmed.
 
 The model does not invent username limits, image size/type lists, contact formatting rules, verification expiry durations, or verification retry limits. Those constraints are not specified in the product documents and must not be mistaken for established domain rules.
 
@@ -230,6 +232,9 @@ An invariant must hold for every applicable operation, including direct links, r
 | INV-22 | Conflicting drafts are preserved until learner choice; conflict resolution cannot assign another work revision's score to the chosen draft.                                                                                                                 | Activity draft / draft conflict                  | UC-07, UC-12, UC-16, UC-17        |
 | INV-23 | Customization is optional and never a prerequisite for practice or progression.                                                                                                                                                                             | Learner account                                  | UC-19–UC-22                      |
 | INV-24 | Supported exercises use Cangjie LTS 1.0.5 and console execution. No other-language, server, or UI-application exercise belongs to the MVP.                                                                                                                  | Assessment definition / code snapshot            | UC-07, UC-23                      |
+| INV-25 | A learner has one active multiple-choice attempt per topic. An attempt is editable only while answering and has at most one finalized submission. Retry starts an empty attempt from the current submitted attempt; old drafts and conflicts cannot change the successor. Starting or replaying Retry does not change score, completion, or availability. | Quiz attempt / activity draft | UC-12, UC-13, UC-15–UC-17 |
+
+The correct choice ID belongs to confirmed multiple-choice feedback, not the editable answer sheet or pre-submit quiz content.
 
 ## 7. Business algorithms
 
@@ -290,15 +295,16 @@ Do not average problem percentages: the established design intentionally weights
 
 **Owner:** Multiple-choice activity and topic submission. **Operations:** UC-12, UC-13.
 
-1. Check topic availability and exactly ten questions in the assessment revision being submitted.
+1. Check topic availability and exactly ten questions in the assessment revision being submitted. If an answer-draft conflict is open for the current attempt, reject submission without finalizing or changing progress; preserve both versions for explicit resolution.
 2. Check that every selected choice belongs to its question in that revision; unanswered is a valid explicit value. If corrected content makes an old draft selection invalid, return it for learner review rather than silently reinterpret the choice.
-3. Show selections for review. If any are unanswered, obtain confirmation that they contribute zero.
+3. Show the selections and obtain explicit confirmation before every submission, with a way to return to the editable answer sheet. If any are unanswered, explain that they contribute zero.
 4. Fix the confirmed answer sheet and assessment revision. Compare each selected choice with that question's correct choice.
 5. Let **C** be the number of correct selections: **earned = 10 × C; possible = 100**. Wrong or unanswered questions earn zero.
-6. Record the question results and finalize the topic submission only after a confirmed evaluation. Apply ALG-05 and ALG-06.
+6. Record the question results, including the submitted choice, correct choice ID, correctness, and explanation, and finalize the topic submission only after a confirmed evaluation. Apply ALG-05 and ALG-06. The correct choice ID is not part of the pre-submit quiz content.
 7. A passing submission enables "Mark complete" through ALG-07; it does not by itself complete a previously incomplete topic.
 
 The submitted answer sheet is the multiple-choice attempt's historical record. It is not independently scored a second time as another topic submission.
+After finalization, that attempt is read-only. A voluntary retry starts a distinct answering attempt through UC-15; it does not immediately resubmit the same answers.
 
 ### ALG-05: Determine passing without rounding
 
@@ -386,6 +392,17 @@ Equal scores need not replace the retained qualifying evidence. Retaining an ear
 
 This manual Validate-button rule does not impose an artificial five-second wait between tests or between different problems evaluated as part of final submission. Submission-required work still respects matching-result, no-overlap, and duplicate-action rules.
 
+### ALG-13: Start and recover a multiple-choice retry
+
+**Owner:** Quiz attempt and activity draft. **Operations:** UC-12, UC-13, UC-15–UC-17.
+
+1. A learner edits and submits one current answering attempt. A confirmed submission fixes its answers and evaluation; that attempt cannot be edited or submitted again.
+2. Start a voluntary retry only from the learner's current submitted attempt and its associated submission. A pending or answering attempt is not a retry source.
+3. Create one successor answering attempt with an empty answer sheet. Use the current published assessment revision for the successor; keep the submitted predecessor and its assessment context unchanged.
+4. Keep draft saves and conflicts associated with the attempt that produced them. Work from a predecessor cannot populate or resolve into its successor.
+5. A replay of the same confirmed retry transition returns the existing successor and does not reset later answers. A lost submission response recovers that same submission before a new retry can start.
+6. Starting or replaying a retry does not finalize an evaluation, award a score, replace the best-score evidence, change completion, or change earned availability. Apply ALG-06 and ALG-07 only when a submission is finalized or completion is explicitly requested.
+
 ## 8. Scenario checks
 
 These are business examples used to challenge the model, not executable tests.
@@ -399,6 +416,9 @@ These are business examples used to challenge the model, not executable tests.
 | A coding topic has maxima 100 and 50; the learner earns 90 in the first and leaves the second unattempted. | After incomplete-work confirmation, submit 90/150, exactly 60%, and complete the topic. This is allowed by the established incomplete-submission and test-count weighting rules. | INV-07, INV-10; ALG-03, ALG-05 |
 | A learner submits six correct answers, two wrong answers, and two unanswered questions.                    | Finalize 60/100 after confirmation; offer "Mark complete" without newly unlocking the next topic yet.                                                                            | INV-06, INV-14; ALG-04         |
 | A multiple-choice learner earns 70/100, then retries for 40/100 before marking complete.                   | Retain 70/100 as passing evidence; "Mark complete" remains available and can unlock the next topic.                                                                              | INV-13, INV-15; ALG-06, ALG-07 |
+| A learner retries after a confirmed quiz submission.                                                       | Start an empty answering attempt with no result feedback; preserve every finalized answer sheet, the best submission, completion, and earned availability.                        | INV-11, INV-13, INV-25; ALG-13 |
+| A learner submits while an answer-draft conflict remains unresolved.                                       | Reject submission without finalizing or changing progress; preserve the server draft and candidate until explicit resolution.                                                  | UC-13-AC7; ALG-04, ALG-13     |
+| A Retry response is lost after the learner answers in the successor attempt.                                | Recover the same successor without clearing its newer answer sheet or changing progress.                                                                                          | INV-20, INV-25; ALG-10, ALG-13 |
 | A learner marks Nothing complete, then signs out and later retries with a failing score.                   | Preserve roadmap completion and best score; no second completion action is required.                                                                                             | INV-13, INV-15; ALG-07, ALG-10 |
 | An expected output is corrected while the learner's source text remains unchanged.                         | Preserve old finalized scores. A new submission cannot reuse the old-revision batch result as proof against corrected tests.                                                     | INV-09, INV-11, INV-13; ALG-11 |
 | A correction is published after a submission has been confirmed but before it is finalized.                | Finish the confirmed submission under its fixed assessment revision; new confirmed submissions use the correction. This follows the derived in-flight consistency rule.          | Section 5.4; ALG-03, ALG-11    |

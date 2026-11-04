@@ -6,6 +6,11 @@ test.beforeEach(async () => {
   await resetLearnerToStart();
 });
 
+const choiceOrder: Record<string, number> = { a: 0, b: 1, c: 2, d: 3 };
+const selectChoice = async (page: import("@playwright/test").Page, questionId: string, choiceId: string) => {
+  await page.locator(`#q-${questionId} [role="radio"]`).nth(choiceOrder[choiceId]).click();
+};
+
 test("learner attempts quiz, sees incomplete warning, passes with >= 60, marks complete, and unlocks subsequent topics", async ({
   page,
 }) => {
@@ -26,14 +31,18 @@ test("learner attempts quiz, sees incomplete warning, passes with >= 60, marks c
   }
 
   await expect(heading).toBeVisible();
-  await expect(page.getByText("0 of 10 answered (10 remaining)")).toBeVisible();
+  await expect(page.getByRole("progressbar", { name: "Questions answered" })).toHaveAttribute("aria-valuenow", "0");
 
   // 2. Click submit without answering -> incomplete warning
   await page.getByRole("button", { name: "Submit activity" }).click();
-  await expect(page.getByText("Incomplete Activity Warning")).toBeVisible();
+  const incompleteDialog = page.getByRole("dialog");
   await expect(
-    page.getByText("You have 10 unanswered questions"),
+    incompleteDialog.getByRole("heading", { name: "10 questions left to answer" }),
   ).toBeVisible();
+  await expect(
+    incompleteDialog.getByText("Unanswered questions receive 0 points with no partial credit."),
+  ).toBeVisible();
+  await expect(incompleteDialog.locator("#quiz-confirm-unanswered-list li")).toHaveCount(10);
 
   // Submit anyway with 0 answers -> 0/100
   await page
@@ -44,21 +53,28 @@ test("learner attempts quiz, sees incomplete warning, passes with >= 60, marks c
   ).toBeVisible();
   // Mark complete button must NOT be visible
   await expect(
-    page.getByRole("button", { name: "Mark complete ✓" }),
+    page.getByRole("button", { name: "Mark complete" }),
   ).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Retry" }).click();
+  await expect(page.getByRole("progressbar", { name: "Questions answered" })).toHaveAttribute("aria-valuenow", "0");
+  await expect(page.getByText("0 / 100 (Needs at least 60 to pass)", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("radio").first()).not.toBeChecked();
+  await expect(page.getByRole("button", { name: "Submit activity" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Submit retry" })).toHaveCount(0);
 
   // 3. Answer 7 questions correctly (70/100 -> passes)
   // q01: b, q02: a, q03: c, q04: b, q05: b, q06: b, q07: c
-  await page.locator('input[name="q-q01"][value="b"]').check();
-  await page.locator('input[name="q-q02"][value="a"]').check();
-  await page.locator('input[name="q-q03"][value="c"]').check();
-  await page.locator('input[name="q-q04"][value="b"]').check();
-  await page.locator('input[name="q-q05"][value="b"]').check();
-  await page.locator('input[name="q-q06"][value="b"]').check();
-  await page.locator('input[name="q-q07"][value="c"]').check();
+  await selectChoice(page, "q01", "b");
+  await selectChoice(page, "q02", "a");
+  await selectChoice(page, "q03", "c");
+  await selectChoice(page, "q04", "b");
+  await selectChoice(page, "q05", "b");
+  await page.getByRole("link", { name: /Questions 6 to 10/ }).click();
+  await selectChoice(page, "q06", "b");
+  await selectChoice(page, "q07", "c");
 
-  // Submit retry
-  await page.getByRole("button", { name: "Submit retry" }).click();
+  await page.getByRole("button", { name: "Submit activity" }).click();
   if (
     await page
       .getByRole("button", { name: "Submit anyway (0 points for unanswered)" })
@@ -85,15 +101,15 @@ test("learner attempts quiz, sees incomplete warning, passes with >= 60, marks c
   await expect(secondTopicCard).toContainText("Complete Getting Started with Cangjie to unlock this topic.");
   await page.goto("/topics/getting-started-with-cangjie/activity");
 
-  const markCompleteBtn = page.getByRole("button", { name: "Mark complete ✓" });
+  const markCompleteBtn = page.getByRole("button", { name: "Mark complete" });
   await expect(markCompleteBtn).toBeVisible();
 
-  // 4. Click "Mark complete ✓" (UC-14)
+  // 4. Mark the topic complete (UC-14)
   await markCompleteBtn.click();
-  await expect(page.getByText("✓ Topic completed!")).toBeVisible();
+  await expect(page.getByText("Topic completed!", { exact: true })).toBeVisible();
 
-  // "Continue to next topic →" link is visible
-  const nextLink = page.getByRole("link", { name: "Continue to next topic →" });
+  // Continue to the next topic
+  const nextLink = page.getByRole("link", { name: "Continue to next topic" });
   await expect(nextLink).toBeVisible();
   await nextLink.click();
 
@@ -133,19 +149,21 @@ test("learner attempts quiz, sees incomplete warning, passes with >= 60, marks c
     q10: "b",
   };
   for (const [qId, choiceId] of Object.entries(t2Answers)) {
-    await page.locator(`input[name="q-${qId}"][value="${choiceId}"]`).check();
+    if (qId === "q06") await page.getByRole("link", { name: /Questions 6 to 10/ }).click();
+    await selectChoice(page, qId, choiceId);
   }
 
   // Submit Topic 2 activity
   await page.getByRole("button", { name: "Submit activity" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Submit activity" }).click();
   await expect(page.getByText("100 / 100 (Passed!)")).toBeVisible();
 
   // Mark Topic 2 complete
-  await page.getByRole("button", { name: "Mark complete ✓" }).click();
-  await expect(page.getByText("✓ Topic completed!")).toBeVisible();
+  await page.getByRole("button", { name: "Mark complete" }).click();
+  await expect(page.getByText("Topic completed!", { exact: true })).toBeVisible();
 
   // Navigate to Topic 3: Running the First Cangjie Program
-  await page.getByRole("link", { name: "Continue to next topic →" }).click();
+  await page.getByRole("link", { name: "Continue to next topic" }).click();
   await expect(page).toHaveURL(/running-the-first-cangjie-program$/);
   await page.getByRole("link", { name: "Open Hello World activity" }).click();
 

@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import Markdown from "react-markdown";
 import { useCallback, useEffect, useRef, useState } from "react";
+import ThemeModeToggle from "./theme-mode-toggle";
 import {
   browserDrafts,
   type PendingRequest,
@@ -535,7 +536,6 @@ export default function CodingWorkspace({
   if (unauthorized)
     return (
       <main className="entry-panel">
-        <p className="eyebrow">MasterCangjie · Development Session</p>
         <h1>Coding Activity</h1>
         <p>Open the development workspace to practice this coding topic.</p>
         <p>
@@ -575,13 +575,12 @@ export default function CodingWorkspace({
     workspace.problems && workspace.problems.length > 1;
 
   return (
-    <div className="workspace-shell">
+    <div className="workspace-shell coding-workspace">
       <header className="topbar">
         <Link href="/">MasterCangjie</Link>
         <Link href={`/topics/${topicId}`}>← Back to lesson</Link>
         <span className="muted">{categoryTitle}</span>
         <button
-          style={{ marginLeft: "auto" }}
           onClick={() =>
             void act(async () => {
               await request("/api/session/logout", {});
@@ -599,6 +598,7 @@ export default function CodingWorkspace({
         >
           Sign out
         </button>
+        <ThemeModeToggle />
       </header>
 
       <main>
@@ -614,27 +614,9 @@ export default function CodingWorkspace({
         {hasMultipleProblems && (
           <nav
             aria-label="Topic problems"
-            className="panel"
-            style={{
-              display: "flex",
-              gap: "0.5rem",
-              flexWrap: "wrap",
-              padding: "0.75rem 1rem",
-              marginBottom: "1rem",
-              backgroundColor: "#f7f9f8",
-            }}
+            className="panel coding-problem-nav"
           >
-            <span
-              style={{
-                alignSelf: "center",
-                fontWeight: 600,
-                fontSize: "0.9rem",
-                color: "#555",
-                marginRight: "0.5rem",
-              }}
-            >
-              Topic Problems:
-            </span>
+            <span className="coding-problem-label">Topic Problems:</span>
             {workspace.problems!.map((prob, idx) => {
               const isActive = prob.slug === workspace.problem.slug;
               return (
@@ -642,32 +624,13 @@ export default function CodingWorkspace({
                   key={prob.problemId}
                   type="button"
                   onClick={() => void switchProblem(prob.slug)}
-                  style={{
-                    padding: "0.4rem 0.8rem",
-                    borderRadius: "6px",
-                    border: isActive ? "2px solid #31665e" : "1px solid #ccc",
-                    backgroundColor: isActive ? "#eaf4f2" : "#fff",
-                    fontWeight: isActive ? 700 : 500,
-                    cursor: isActive ? "default" : "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "0.4rem",
-                    fontSize: "0.88rem",
-                  }}
+                  className={`coding-problem-tab${isActive ? " is-active" : ""}`}
                 >
                   <span>
                     {idx + 1}. {prob.title}
                   </span>
-                  <span
-                    style={{
-                      fontSize: "0.75rem",
-                      color: prob.solved ? "#128361" : "#777",
-                      backgroundColor: prob.solved ? "#e0f5ed" : "#eee",
-                      padding: "2px 5px",
-                      borderRadius: "4px",
-                    }}
-                  >
-                    {prob.solved ? "✓ Solved" : `${prob.testCount * 10} pts`}
+                  <span className={`coding-problem-status${prob.solved ? " is-solved" : " is-pending"}`}>
+                    {prob.solved ? "Solved" : `${prob.testCount * 10} pts`}
                   </span>
                 </button>
               );
@@ -677,8 +640,8 @@ export default function CodingWorkspace({
 
         <div className="workspace-heading">
           <div>
-            <p className="eyebrow">{topicTitle}</p>
             <h1>{workspace.problem.title}</h1>
+            <p className="workspace-topic-context">{topicTitle}</p>
           </div>
           <div className="progress-summary">
             <span>
@@ -689,14 +652,9 @@ export default function CodingWorkspace({
                   : "Not submitted"}
               </strong>
             </span>
-            <span
-              style={{
-                color: workspace.progress.completed ? "#128361" : "inherit",
-                fontWeight: workspace.progress.completed ? 600 : "normal",
-              }}
-            >
+            <span className={`topic-progress-state${workspace.progress.completed ? " is-complete" : ""}`}>
               {workspace.progress.completed
-                ? "✓ Topic complete"
+                ? "Topic complete"
                 : "Topic in progress"}
             </span>
           </div>
@@ -863,11 +821,11 @@ export default function CodingWorkspace({
                         <li key={p.problemId}>
                           <strong>{p.slug}</strong>:{" "}
                           {p.attempted ? (
-                            <span style={{ color: "#128361" }}>
+                            <span className="participation-status is-attempted">
                               Attempted ({p.caseCount * 10} pts)
                             </span>
                           ) : (
-                            <span style={{ color: "#b22c2c" }}>
+                            <span className="participation-status is-unattempted">
                               Unattempted (will earn 0 points)
                             </span>
                           )}
@@ -886,7 +844,6 @@ export default function CodingWorkspace({
                 {review.unattempted && (
                   <label
                     className="acknowledgement"
-                    style={{ display: "block", margin: "1rem 0" }}
                   >
                     <input
                       type="checkbox"
@@ -897,7 +854,7 @@ export default function CodingWorkspace({
                   </label>
                 )}
 
-                <div className="actions" style={{ marginTop: "1rem" }}>
+                <div className="actions review-actions">
                   <button
                     className="primary"
                     disabled={busy || (review.unattempted && !acknowledged)}
@@ -1029,23 +986,17 @@ export default function CodingWorkspace({
             {/* Topic completed and unlock next navigation */}
             {workspace.progress.completed && workspace.progress.nextTopicId && (
               <aside
-                className="panel next-topic"
-                style={{
-                  marginTop: "1.5rem",
-                  borderColor: "#128361",
-                  backgroundColor: "#f0f9f6",
-                }}
+                className="panel next-topic coding-completion"
               >
-                <h2 style={{ color: "#128361", margin: "0 0 0.5rem" }}>
-                  ✓ Topic completed!
+                <h2 className="coding-completion-title">
+                  Topic completed!
                 </h2>
-                <p style={{ margin: "0 0 1rem" }}>
+                <p>
                   Congratulations! You passed this topic. The next topic in the
                   roadmap is unlocked.
                 </p>
                 <Link
                   className="activity-link"
-                  style={{ display: "inline-block" }}
                   href={`/topics/${workspace.progress.nextTopicId}`}
                 >
                   Continue to next topic →

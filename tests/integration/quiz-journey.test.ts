@@ -20,8 +20,9 @@ it('finalizes concurrent replays once and rejects a changed snapshot under the s
   const actor = await freshFixture(pool);
   const topicId = 'getting-started-with-cangjie';
   const quiz = await readQuiz(topicId);
+  const workspace = await quizSubmissions.workspace(actor, topicId);
   const request = {
-    topicId, requestKey: 'recovery-concurrent-test', assessmentRevision: quiz.revision,
+    topicId, attemptId: workspace.currentAttempt.attemptId, requestKey: 'recovery-concurrent-test', assessmentRevision: workspace.currentAttempt.assessmentRevision,
     answers: { [quiz.questions[0].id]: quiz.questions[0].correctChoiceId },
   };
   const [first, replay] = await Promise.all([
@@ -30,8 +31,30 @@ it('finalizes concurrent replays once and rejects a changed snapshot under the s
   expect(replay.submissionId).toBe(first.submissionId);
   expect(replay.evaluation).toEqual(first.evaluation);
   await expect(quizSubmissions.submit(actor, { ...request, answers: {} })).rejects.toThrow(/identity was reused/i);
-  const retry = await quizSubmissions.submit(actor, { ...request, requestKey: 'recovery-intentional-retry', answers: {} });
+  const retryReceipt = await quizSubmissions.startRetry(actor, topicId, {
+    sourceSubmissionId: first.submissionId,
+    expectedAttemptId: workspace.currentAttempt.attemptId,
+    baseRevision: workspace.draft.workRevision,
+  });
+  await expect(quizSubmissions.submit(actor, {
+    ...request,
+    attemptId: retryReceipt.attemptId,
+  })).rejects.toThrow(/identity was reused/i);
+  const retry = await quizSubmissions.submit(actor, {
+    ...request,
+    attemptId: retryReceipt.attemptId,
+    requestKey: 'recovery-intentional-retry',
+    assessmentRevision: (await quizSubmissions.workspace(actor, topicId)).currentAttempt.assessmentRevision,
+    answers: {},
+  });
   expect(retry.submissionId).not.toBe(first.submissionId);
+  const recovered = await quizSubmissions.submit(actor, request);
+  expect(recovered.submissionId).toBe(first.submissionId);
+  expect(recovered.attemptId).toBe(first.attemptId);
+  const afterHistoricalReplay = await quizSubmissions.workspace(actor, topicId);
+  expect(afterHistoricalReplay.currentAttempt.attemptId).toBe(retry.attemptId);
+  expect(afterHistoricalReplay.currentSubmission?.submissionId).toBe(retry.submissionId);
+  expect(afterHistoricalReplay.currentSubmission?.evaluation.questionResults[0].correctChoiceId).toBeDefined();
   const records = await pool.query('SELECT request_key, snapshot FROM topic_submissions WHERE learner_id=$1 ORDER BY created_at', [actor.learnerId]);
   expect(records.rowCount).toBe(2);
   expect(records.rows.find(row => row.request_key === request.requestKey).snapshot.answers).toEqual(request.answers);
@@ -40,25 +63,81 @@ it('finalizes concurrent replays once and rejects a changed snapshot under the s
 it('restores and advances multiple conflicts without changing submitted history', async () => {
   const actor = await freshFixture(pool);
   const topic = 'getting-started-with-cangjie';
-  await quizSubmissions.saveDraft(actor, topic, { baseRevision: 0, answers: { q: 'server' } });
-  const result = await quizSubmissions.saveDraft(actor, topic, { baseRevision: 0, answers: { q: 'candidate' } });
-  const second = await quizSubmissions.saveDraft(actor, topic, { baseRevision: 0, answers: { q: 'later' } });
+  const attemptId = (await quizSubmissions.workspace(actor, topic)).currentAttempt.attemptId;
+  await quizSubmissions.saveDraft(actor, topic, { attemptId, baseRevision: 0, answers: { q: 'server' } });
+  const result = await quizSubmissions.saveDraft(actor, topic, { attemptId, baseRevision: 0, answers: { q: 'candidate' } });
+  const second = await quizSubmissions.saveDraft(actor, topic, { attemptId, baseRevision: 0, answers: { q: 'later' } });
   expect(result.kind).toBe('conflict');
   const workspace = await quizSubmissions.workspace(actor, topic);
   expect(workspace.conflict).toEqual(result);
   if (result.kind !== 'conflict') throw new Error('Expected conflict');
-  const resolved = await quizSubmissions.resolveDraft(actor, topic, { conflictId: result.conflictId, choice: 'candidate', baseRevision: result.server.workRevision });
+  const resolved = await quizSubmissions.resolveDraft(actor, topic, { attemptId, conflictId: result.conflictId, choice: 'candidate', baseRevision: result.server.workRevision });
   expect(resolved.kind).toBe('saved');
   if (resolved.kind !== 'saved' || second.kind !== 'conflict') throw new Error('Expected saved conflict');
   expect(resolved.nextConflict?.conflictId).toBe(second.conflictId);
   expect(resolved.nextConflict?.server.answers).toEqual({ q: 'candidate' });
-  await quizSubmissions.resolveDraft(actor, topic, { conflictId: second.conflictId, choice: 'server', baseRevision: resolved.workRevision });
+  await quizSubmissions.resolveDraft(actor, topic, { attemptId, conflictId: second.conflictId, choice: 'server', baseRevision: resolved.workRevision });
   expect((await quizSubmissions.workspace(actor, topic)).conflict).toBeNull();
+});
+
+it('keeps an attempt editable when submission is attempted with an unresolved draft conflict', async () => {
+  const actor = await freshFixture(pool);
+  const topicId = 'getting-started-with-cangjie';
+  const quiz = await readQuiz(topicId);
+  const workspace = await quizSubmissions.workspace(actor, topicId);
+  const firstQuestion = quiz.questions[0];
+  const serverAnswers = { [firstQuestion.id]: firstQuestion.choices[0].id };
+  const candidateAnswers = { [firstQuestion.id]: firstQuestion.choices[1].id };
+
+  await quizSubmissions.saveDraft(actor, topicId, {
+    attemptId: workspace.currentAttempt.attemptId,
+    baseRevision: workspace.draft.workRevision,
+    answers: serverAnswers,
+  });
+  const conflict = await quizSubmissions.saveDraft(actor, topicId, {
+    attemptId: workspace.currentAttempt.attemptId,
+    baseRevision: workspace.draft.workRevision,
+    answers: candidateAnswers,
+  });
+  expect(conflict.kind).toBe('conflict');
+  if (conflict.kind !== 'conflict') throw new Error('Expected an unresolved draft conflict.');
+
+  const request = {
+    topicId,
+    attemptId: workspace.currentAttempt.attemptId,
+    requestKey: 'submit-with-open-draft-conflict',
+    answers: candidateAnswers,
+    assessmentRevision: workspace.currentAttempt.assessmentRevision,
+  };
+  await expect(quizSubmissions.submit(actor, request)).rejects.toThrow(/resolve the open quiz draft conflict/i);
+
+  const blocked = await quizSubmissions.workspace(actor, topicId);
+  expect(blocked.currentAttempt).toMatchObject({
+    attemptId: workspace.currentAttempt.attemptId,
+    state: 'answering',
+    submissionId: null,
+  });
+  expect(blocked.currentSubmission).toBeUndefined();
+  expect(blocked.latestSubmission).toBeUndefined();
+  expect(blocked.progress.bestScore).toBeNull();
+  expect(blocked.conflict).toMatchObject({ conflictId: conflict.conflictId });
+
+  const resolved = await quizSubmissions.resolveDraft(actor, topicId, {
+    attemptId: workspace.currentAttempt.attemptId,
+    conflictId: conflict.conflictId,
+    choice: 'candidate',
+    baseRevision: conflict.server.workRevision,
+  });
+  expect(resolved.kind).toBe('saved');
+  const submitted = await quizSubmissions.submit(actor, request);
+  expect(submitted.attemptId).toBe(workspace.currentAttempt.attemptId);
+  expect((await quizSubmissions.workspace(actor, topicId)).conflict).toBeNull();
 });
 
 it('acknowledges an identical stale quiz draft replay and accepts a newer snapshot', async () => {
   const actor = await freshFixture(pool);
   const topic = 'getting-started-with-cangjie';
+  const attemptId = (await quizSubmissions.workspace(actor, topic)).currentAttempt.attemptId;
   const quiz = await readQuiz(topic);
   const firstQuestion = quiz.questions[0];
   const secondQuestion = quiz.questions[1];
@@ -69,12 +148,14 @@ it('acknowledges an identical stale quiz draft replay and accepts a newer snapsh
   };
 
   const firstSave = await quizSubmissions.saveDraft(actor, topic, {
+    attemptId,
     baseRevision: 0,
     answers: firstSnapshot,
   });
   expect(firstSave).toEqual({ kind: 'saved', workRevision: 1 });
 
   const replay = await quizSubmissions.saveDraft(actor, topic, {
+    attemptId,
     baseRevision: 0,
     answers: firstSnapshot,
   });
@@ -89,6 +170,7 @@ it('acknowledges an identical stale quiz draft replay and accepts a newer snapsh
     [secondQuestion.id]: secondChoice.id,
   };
   const latestSave = await quizSubmissions.saveDraft(actor, topic, {
+    attemptId,
     baseRevision: replay.workRevision,
     answers: latestSnapshot,
   });
@@ -128,6 +210,7 @@ it('tests the complete multiple-choice workflow: draft, submit, retry retention,
 
   // Save partial answers
   const save1 = await quizSubmissions.saveDraft(actor, topic1, {
+    attemptId: ws1.currentAttempt.attemptId,
     baseRevision: 0,
     answers: { [qIds[0]]: 'a' },
   });
@@ -136,6 +219,7 @@ it('tests the complete multiple-choice workflow: draft, submit, retry retention,
 
   // Concurrent conflicting save with stale revision
   const conflict = await quizSubmissions.saveDraft(actor, topic1, {
+    attemptId: ws1.currentAttempt.attemptId,
     baseRevision: 0,
     answers: { [qIds[0]]: 'b' },
   });
@@ -144,6 +228,7 @@ it('tests the complete multiple-choice workflow: draft, submit, retry retention,
     expect(conflict.conflictId).toBeDefined();
     // Resolve conflict choosing candidate
     const resolved = await quizSubmissions.resolveDraft(actor, topic1, {
+      attemptId: ws1.currentAttempt.attemptId,
       conflictId: conflict.conflictId,
       choice: 'candidate',
       baseRevision: 1,
@@ -165,9 +250,10 @@ it('tests the complete multiple-choice workflow: draft, submit, retry retention,
 
   const failResult = await quizSubmissions.submit(actor, {
     topicId: topic1,
+    attemptId: ws1.currentAttempt.attemptId,
     requestKey: 'submit-fail-1',
     answers: failingAnswers,
-    assessmentRevision: fullQuiz1.revision,
+    assessmentRevision: ws1.currentAttempt.assessmentRevision,
   });
 
   expect(failResult.evaluation.score).toEqual({ earned: 50, possible: 100 });
@@ -190,11 +276,19 @@ it('tests the complete multiple-choice workflow: draft, submit, retry retention,
     passingAnswers[q.id] = wrong.id;
   }
 
+  const afterFail = await quizSubmissions.workspace(actor, topic1);
+  const passRetry = await quizSubmissions.startRetry(actor, topic1, {
+    sourceSubmissionId: failResult.submissionId,
+    expectedAttemptId: afterFail.currentAttempt.attemptId,
+    baseRevision: afterFail.draft.workRevision,
+  });
+  const passAttempt = await quizSubmissions.workspace(actor, topic1);
   const passResult = await quizSubmissions.submit(actor, {
     topicId: topic1,
+    attemptId: passRetry.attemptId,
     requestKey: 'submit-pass-1',
     answers: passingAnswers,
-    assessmentRevision: fullQuiz1.revision,
+    assessmentRevision: passAttempt.currentAttempt.assessmentRevision,
   });
 
   expect(passResult.evaluation.score).toEqual({ earned: 70, possible: 100 });
@@ -216,20 +310,34 @@ it('tests the complete multiple-choice workflow: draft, submit, retry retention,
     lowerAnswers[q.id] = wrong.id;
   }
 
+  const afterPass = await quizSubmissions.workspace(actor, topic1);
+  const lowerRetry = await quizSubmissions.startRetry(actor, topic1, {
+    sourceSubmissionId: passResult.submissionId,
+    expectedAttemptId: afterPass.currentAttempt.attemptId,
+    baseRevision: afterPass.draft.workRevision,
+  });
+  const lowerAttempt = await quizSubmissions.workspace(actor, topic1);
+  expect(lowerAttempt.draft.answers).toEqual({});
+  expect(lowerAttempt.progress.bestScore).toEqual({ earned: 70, possible: 100 });
+  expect(lowerAttempt.progress.canMarkComplete).toBe(true);
+  const completeDuringRetry = await quizSubmissions.markComplete(actor, topic1);
+  expect(completeDuringRetry.completed).toBe(true);
+  expect(completeDuringRetry.nextTopicAvailable).toBe(true);
   const retryResult = await quizSubmissions.submit(actor, {
     topicId: topic1,
+    attemptId: lowerRetry.attemptId,
     requestKey: 'submit-retry-lower-1',
     answers: lowerAnswers,
-    assessmentRevision: fullQuiz1.revision,
+    assessmentRevision: lowerAttempt.currentAttempt.assessmentRevision,
   });
 
   expect(retryResult.evaluation.score).toEqual({ earned: 40, possible: 100 });
   expect(retryResult.progress.bestScore).toEqual({ earned: 70, possible: 100 });
-  expect(retryResult.progress.completed).toBe(false);
-  expect(retryResult.progress.canMarkComplete).toBe(true); // Still eligible to mark complete!
-  expect(retryResult.progress.nextTopicAvailable).toBe(false);
+  expect(retryResult.progress.completed).toBe(true);
+  expect(retryResult.progress.canMarkComplete).toBe(false);
+  expect(retryResult.progress.nextTopicAvailable).toBe(true);
 
-  // 6. Explicit UC-14 "Mark complete" action
+  // 6. Repeating Mark complete is idempotent after completing during Retry.
   const completeResult = await quizSubmissions.markComplete(actor, topic1);
   expect(completeResult.completed).toBe(true);
   expect(completeResult.nextTopicAvailable).toBe(true);
@@ -253,9 +361,10 @@ it('tests the complete multiple-choice workflow: draft, submit, retry retention,
 
   const t2Result = await quizSubmissions.submit(actor, {
     topicId: topic2,
+    attemptId: ws2.currentAttempt.attemptId,
     requestKey: 'submit-t2-perfect',
     answers: perfectAnswers,
-    assessmentRevision: fullQuiz2.revision,
+    assessmentRevision: ws2.currentAttempt.assessmentRevision,
   });
   expect(t2Result.evaluation.score).toEqual({ earned: 100, possible: 100 });
   expect(t2Result.progress.canMarkComplete).toBe(true);

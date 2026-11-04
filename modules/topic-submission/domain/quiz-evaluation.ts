@@ -1,4 +1,4 @@
-import { assertScore, passes, type Score } from "./evaluation.ts";
+import { assertScore, betterScore, passes, type Score } from "./evaluation.ts";
 
 /** Answer sheet: selection or null/undefined (unanswered) for each question. */
 export type AnswerSheet = Record<string, string | null | undefined>;
@@ -6,6 +6,8 @@ export type AnswerSheet = Record<string, string | null | undefined>;
 export type QuestionFeedback = Readonly<{
   questionId: string;
   selectedChoiceId: string | null;
+  /** Optional only for historical persisted results created before this field was added. */
+  correctChoiceId?: string;
   correct: boolean;
   earned: number; // 10 or 0
   explanation: string;
@@ -63,6 +65,7 @@ export function evaluateQuiz(
       questionResults.push({
         questionId: q.id,
         selectedChoiceId: null,
+        correctChoiceId: q.correctChoiceId,
         correct: false,
         earned: 0,
         explanation: q.explanation,
@@ -84,6 +87,7 @@ export function evaluateQuiz(
       questionResults.push({
         questionId: q.id,
         selectedChoiceId: selected,
+        correctChoiceId: q.correctChoiceId,
         correct: true,
         earned: 10,
         explanation: q.explanation,
@@ -92,6 +96,7 @@ export function evaluateQuiz(
       questionResults.push({
         questionId: q.id,
         selectedChoiceId: selected,
+        correctChoiceId: q.correctChoiceId,
         correct: false,
         earned: 0,
         explanation: q.explanation,
@@ -130,12 +135,9 @@ export function retainQuizSubmissionProgress(
   finalizedScore: Score,
 ): MultipleChoiceProgress {
   assertScore(finalizedScore);
-  const bestScore =
-    previous.bestScore === null
-      ? { ...finalizedScore }
-      : finalizedScore.earned > previous.bestScore.earned
-        ? { ...finalizedScore }
-        : previous.bestScore;
+  const bestScore = betterScore(finalizedScore, previous.bestScore)
+    ? { ...finalizedScore }
+    : previous.bestScore;
 
   // canMarkComplete is true if candidate passed OR previous was already eligible
   const canMarkComplete = previous.canMarkComplete || passes(finalizedScore);

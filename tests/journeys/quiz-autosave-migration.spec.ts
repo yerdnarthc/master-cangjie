@@ -74,12 +74,18 @@ test("migrates a dirty legacy quiz draft and restores its answers", async ({
     database.close();
   }, { learnerId, topicId, tabId });
 
-  await page.clock.install();
   await page.route(`**/api/topics/${topicId}/quiz`, (route) =>
     route.fulfill({
       json: {
         learnerId,
         topicId,
+        currentAttempt: {
+          attemptId: "00000000-0000-4000-8000-000000000001",
+          assessmentRevision: 1,
+          state: "answering",
+          submissionId: null,
+        },
+        currentAttemptIsLegacy: true,
         quiz: { topicId, revision: 1, title: "Quiz", questions },
         draft: { answers: {}, workRevision: 0 },
         progress: {
@@ -93,8 +99,15 @@ test("migrates a dirty legacy quiz draft and restores its answers", async ({
     }),
   );
 
+  const sessionResponse = page.waitForResponse(response =>
+    response.url().endsWith("/api/session") && response.request().method() === "POST",
+  );
+  await page.getByRole("button", { name: "Open development workspace" }).click();
+  expect((await sessionResponse).status()).toBe(200);
+  await expect(page.getByRole("heading", { name: "Learn Cangjie" })).toBeVisible();
+  await page.clock.install();
   await page.goto(`/topics/${topicId}/activity`);
-  const restoredAnswer = page.locator('input[name="q-q0"][value="b"]');
+  const restoredAnswer = page.getByRole("radio", { name: "B" }).first();
   await expect(restoredAnswer).toBeChecked();
   await page.reload();
   await expect(restoredAnswer).toBeChecked();
@@ -122,6 +135,7 @@ test("migrates a dirty legacy quiz draft and restores its answers", async ({
       learnerId,
       topicId,
       tabId,
+      attemptId: "00000000-0000-4000-8000-000000000001",
       answers: { q0: "b" },
       baseRevision: 0,
       dirty: true,

@@ -13,6 +13,15 @@ export function passes(score: Score): boolean {
   return 5n * BigInt(score.earned) >= 3n * BigInt(score.possible);
 }
 
+/** Compare score percentages exactly; ties preserve the earlier best submission. */
+export function betterScore(candidate: Score, previous: Score | null): boolean {
+  assertScore(candidate);
+  if (previous === null) return true;
+  assertScore(previous);
+  return BigInt(candidate.earned) * BigInt(previous.possible)
+    > BigInt(previous.earned) * BigInt(candidate.possible);
+}
+
 /** Compare the bytes themselves; display decoding and whitespace normalization are not grading. */
 export function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
   return a.length === b.length && a.every((byte, index) => byte === b[index]);

@@ -27,7 +27,9 @@ describe("Multiple-choice domain evaluation (UC-13)", () => {
     expect(result.correctCount).toBe(10);
     expect(result.unansweredCount).toBe(0);
     expect(
-      result.questionResults.every((r) => r.correct && r.earned === 10),
+      result.questionResults.every(
+        (r) => r.correct && r.earned === 10 && r.correctChoiceId === "b",
+      ),
     ).toBe(true);
   });
 
@@ -68,6 +70,11 @@ describe("Multiple-choice domain evaluation (UC-13)", () => {
     expect(result.passed).toBe(false);
     expect(result.correctCount).toBe(5);
     expect(result.unansweredCount).toBe(1);
+    expect(result.questionResults[6]).toMatchObject({
+      selectedChoiceId: "a",
+      correct: false,
+      correctChoiceId: "b",
+    });
   });
 
   it("unanswered questions earn zero and are counted explicitly", () => {
@@ -78,7 +85,11 @@ describe("Multiple-choice domain evaluation (UC-13)", () => {
     expect(result.correctCount).toBe(0);
     expect(
       result.questionResults.every(
-        (r) => !r.correct && r.earned === 0 && r.selectedChoiceId === null,
+        (r) =>
+          !r.correct &&
+          r.earned === 0 &&
+          r.selectedChoiceId === null &&
+          r.correctChoiceId === "b",
       ),
     ).toBe(true);
   });
@@ -147,6 +158,30 @@ describe("Multiple-choice topic progression (UC-13 & UC-14)", () => {
     const completed = markQuizTopicComplete(afterFailingRetry);
     expect(completed.completed).toBe(true);
     expect(completed.nextTopicAvailable).toBe(true);
+  });
+
+  it("retains the higher normalized percentage when score denominators differ", () => {
+    const previous = retainQuizSubmissionProgress(initialProgress, {
+      earned: 70,
+      possible: 100,
+    });
+    const improved = retainQuizSubmissionProgress(previous, {
+      earned: 30,
+      possible: 40,
+    });
+    expect(improved.bestScore).toEqual({ earned: 30, possible: 40 });
+  });
+
+  it("keeps the earlier best submission on a normalized percentage tie", () => {
+    const previous = retainQuizSubmissionProgress(initialProgress, {
+      earned: 60,
+      possible: 100,
+    });
+    const tied = retainQuizSubmissionProgress(previous, {
+      earned: 30,
+      possible: 50,
+    });
+    expect(tied.bestScore).toEqual({ earned: 60, possible: 100 });
   });
 
   it("rejects Mark complete if the topic has no passing submission", () => {

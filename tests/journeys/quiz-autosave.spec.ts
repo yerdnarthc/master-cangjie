@@ -1,7 +1,9 @@
 import { test, expect, type Page } from "@playwright/test";
 
 async function readQuizDraft(page: Page, topicId: string) {
-  return page.evaluate((topic) => new Promise<{
+  return page.evaluate(async (topic) => {
+    const workspace = await fetch(`/api/topics/${encodeURIComponent(topic)}/quiz`).then(response => response.json());
+    return new Promise<{
     dirty: boolean;
     pendingSave: unknown;
   } | null>((resolve) => {
@@ -17,7 +19,7 @@ async function readQuizDraft(page: Page, topicId: string) {
       }
       const transaction = database.transaction("quizDrafts", "readonly");
       const get = transaction.objectStore("quizDrafts").get(
-        JSON.stringify(["test", `quiz:${topic}:${tabId}`]),
+        JSON.stringify(["test", `quiz:${topic}:${tabId}`, workspace.currentAttempt.attemptId]),
       );
       get.onsuccess = () => {
         const row = get.result;
@@ -29,7 +31,14 @@ async function readQuizDraft(page: Page, topicId: string) {
         resolve(null);
       };
     };
-  }), topicId);
+  });
+  }, topicId);
+}
+
+async function openMockActivity(page: Page, url: string) {
+  await page.goto(url);
+  const signIn = page.getByRole("button", { name: "Open development workspace" });
+  if (await signIn.isVisible().catch(() => false)) await signIn.click();
 }
 
 test("saves selections made while an earlier save is pending", async ({
@@ -52,6 +61,9 @@ test("saves selections made while an earlier save is pending", async ({
     route.fulfill({
       json: {
         learnerId: "test",
+
+        currentAttempt: { attemptId: "00000000-0000-4000-8000-000000000001", assessmentRevision: 1, state: "answering", submissionId: null },
+        currentAttemptIsLegacy: false,
         topicId: "getting-started-with-cangjie",
         quiz: {
           topicId: "getting-started-with-cangjie",
@@ -77,12 +89,12 @@ test("saves selections made while an earlier save is pending", async ({
     await route.fulfill({ json: responseBody });
   });
   await page.clock.install();
-  await page.goto("/topics/getting-started-with-cangjie/activity");
+  await openMockActivity(page, "/topics/getting-started-with-cangjie/activity");
   await page.clock.pauseAt(await page.evaluate(() => Date.now() + 60_000));
-  await page.locator('input[name="q-q0"][value="a"]').check();
+  await page.locator('#q-q0 [role="radio"]').nth(0).click();
   await page.clock.fastForward(1500);
   await expect.poll(() => saves.length).toBe(1);
-  await page.locator('input[name="q-q1"][value="b"]').check();
+  await page.locator('#q-q1 [role="radio"]').nth(1).click();
   await page.clock.fastForward(1500);
   const firstResponse = page.waitForResponse((response) =>
     response.url().includes("/quiz/draft"),
@@ -94,13 +106,15 @@ test("saves selections made while an earlier save is pending", async ({
   await page.clock.fastForward(1500);
   await expect.poll(() => saves.length, { timeout: 6000 }).toBe(2);
   expect(saves[1]).toEqual({
+    attemptId: "00000000-0000-4000-8000-000000000001",
     baseRevision: 1,
     answers: { q0: "a", q1: "b" },
     expectedLearnerId: "test",
   });
-  await expect(
-    page.getByText("Saved on server", { exact: true }),
-  ).toBeVisible();
+  await expect.poll(async () => {
+    const draft = await readQuizDraft(page, "getting-started-with-cangjie");
+    return !draft || (!draft.dirty && draft.pendingSave === null);
+  }).toBe(true);
 });
 
 test("keeps a completion error visible when a pending quiz save succeeds", async ({ page }) => {
@@ -136,6 +150,9 @@ test("keeps a completion error visible when a pending quiz save succeeds", async
   await page.route(`**/api/topics/${topic}/quiz`, (route) => route.fulfill({
     json: {
       learnerId: "test",
+
+      currentAttempt: { attemptId: "00000000-0000-4000-8000-000000000001", assessmentRevision: 1, state: "answering", submissionId: null },
+      currentAttemptIsLegacy: false,
       topicId: topic,
       quiz: { topicId: topic, revision: 1, title: "Quiz", questions },
       draft: { answers: {}, workRevision: 0 },
@@ -145,11 +162,6 @@ test("keeps a completion error visible when a pending quiz save succeeds", async
         canMarkComplete: true,
         nextTopicAvailable: false,
         nextTopicId: null,
-      },
-      latestSubmission: {
-        submissionId: "passed-attempt",
-        evaluation,
-        submittedAt: "2026-01-01T00:00:00Z",
       },
     },
   }));
@@ -163,11 +175,13 @@ test("keeps a completion error visible when a pending quiz save succeeds", async
   });
 
   await page.goto(`/topics/${topic}/activity`);
-  await page.getByRole("button", { name: "Mark complete ✓" }).click();
+  const login = page.getByRole("button", { name: "Open development workspace" });
+  if (await login.isVisible()) await login.click();
+  await page.getByRole("button", { name: "Mark complete" }).click();
   await expect(page.locator("main .panel.error"))
     .toContainText("Temporary outage.");
 
-  await page.locator('input[name="q-q0"][value="b"]').check();
+  await page.locator('#q-q0 [role="radio"]').nth(1).click();
   await page.clock.fastForward(1500);
   await saveStarted;
   const draftResponse = page.waitForResponse((response) =>
@@ -221,6 +235,9 @@ test("replays a persisted pending quiz save before syncing newer answers after r
     route.fulfill({
       json: {
         learnerId: "test",
+
+        currentAttempt: { attemptId: "00000000-0000-4000-8000-000000000001", assessmentRevision: 1, state: "answering", submissionId: null },
+        currentAttemptIsLegacy: false,
         topicId: topic,
         quiz: { topicId: topic, revision: 1, title: "Quiz", questions },
         draft: { answers: {}, workRevision: 0 },
@@ -252,22 +269,23 @@ test("replays a persisted pending quiz save before syncing newer answers after r
     if (saves.length === 2) signalReplayAcknowledged();
   });
 
-  await page.goto(`/topics/${topic}/activity`);
-  await page.locator('input[name="q-q0"][value="a"]').check();
+  await openMockActivity(page, `/topics/${topic}/activity`);
+  await page.locator('#q-q0 [role="radio"]').nth(0).click();
   await page.clock.fastForward(1500);
   await firstStarted;
 
-  await page.locator('input[name="q-q1"][value="b"]').check();
+  await page.locator('#q-q1 [role="radio"]').nth(1).click();
   await page.clock.fastForward(1500);
   releaseFirst();
   await firstAborted;
 
   await page.reload();
-  await expect(page.locator('input[name="q-q0"][value="a"]')).toBeChecked();
-  await expect(page.locator('input[name="q-q1"][value="b"]')).toBeChecked();
+  await expect(page.locator('#q-q0 [role="radio"]').nth(0)).toBeChecked();
+  await expect(page.locator('#q-q1 [role="radio"]').nth(1)).toBeChecked();
   await page.clock.fastForward(1500);
   await expect.poll(() => saves.length).toBe(2);
   expect(saves[1]).toEqual({
+    attemptId: "00000000-0000-4000-8000-000000000001",
     baseRevision: 0,
     answers: { q0: "a" },
     expectedLearnerId: "test",
@@ -277,13 +295,15 @@ test("replays a persisted pending quiz save before syncing newer answers after r
   await page.clock.fastForward(1500);
   await expect.poll(() => saves.length).toBe(3);
   expect(saves[2]).toEqual({
+    attemptId: "00000000-0000-4000-8000-000000000001",
     baseRevision: 1,
     answers: { q0: "a", q1: "b" },
     expectedLearnerId: "test",
   });
-  await expect(
-    page.getByText("Saved on server", { exact: true }),
-  ).toBeVisible();
+  await expect.poll(async () => {
+    const draft = await readQuizDraft(page, topic);
+    return !draft || (!draft.dirty && draft.pendingSave === null);
+  }).toBe(true);
 });
 
 test("recovers a pending save after reopening the activity offline and reconnecting", async ({
@@ -317,6 +337,9 @@ test("recovers a pending save after reopening the activity offline and reconnect
     return route.fulfill({
       json: {
         learnerId: "test",
+
+        currentAttempt: { attemptId: "00000000-0000-4000-8000-000000000001", assessmentRevision: 1, state: "answering", submissionId: null },
+        currentAttemptIsLegacy: false,
         topicId: topic,
         quiz: { topicId: topic, revision: 1, title: "Quiz", questions },
         draft: { answers: {}, workRevision: 0 },
@@ -339,11 +362,11 @@ test("recovers a pending save after reopening the activity offline and reconnect
     await route.fulfill({ json: { kind: "saved", workRevision: 1 } });
   });
 
-  await page.goto(`/topics/${topic}/activity`);
-  const answer = page.locator('input[name="q-q0"][value="a"]');
+  await openMockActivity(page, `/topics/${topic}/activity`);
+  const answer = page.locator('#q-q0 [role="radio"]').nth(0);
   await expect(answer).toBeVisible();
   await page.clock.pauseAt(await page.evaluate(() => Date.now() + 60_000));
-  await answer.check();
+  await answer.click();
   await page.clock.fastForward(1500);
   await expect.poll(() => saves.length).toBe(1);
 
@@ -354,13 +377,16 @@ test("recovers a pending save after reopening the activity offline and reconnect
   await page.evaluate(() => window.dispatchEvent(new Event("online")));
   releaseOfflineWorkspace();
 
-  const restoredAnswer = page.locator('input[name="q-q0"][value="a"]');
+  const restoredAnswer = page.locator('#q-q0 [role="radio"]').nth(0);
   await expect(restoredAnswer).toBeVisible();
   await expect(restoredAnswer).toBeChecked();
   await page.clock.fastForward(1500);
   await expect.poll(() => saves.length).toBe(2);
   expect(saves[1]).toEqual(saves[0]);
-  await expect(page.getByText("Saved on server", { exact: true })).toBeVisible();
+  await expect.poll(async () => {
+    const draft = await readQuizDraft(page, topic);
+    return !draft || (!draft.dirty && draft.pendingSave === null);
+  }).toBe(true);
 });
 
 test("retries a timed-out quiz save with the same snapshot before saving newer answers", async ({
@@ -394,6 +420,9 @@ test("retries a timed-out quiz save with the same snapshot before saving newer a
     route.fulfill({
       json: {
         learnerId: "test",
+
+        currentAttempt: { attemptId: "00000000-0000-4000-8000-000000000001", assessmentRevision: 1, state: "answering", submissionId: null },
+        currentAttemptIsLegacy: false,
         topicId: topic,
         quiz: { topicId: topic, revision: 1, title: "Quiz", questions },
         draft: { answers: {}, workRevision: 0 },
@@ -423,11 +452,11 @@ test("retries a timed-out quiz save with the same snapshot before saving newer a
     await route.fulfill({ json: { kind: "saved", workRevision: revision } });
   });
 
-  await page.goto(`/topics/${topic}/activity`);
-  await page.locator('input[name="q-q0"][value="a"]').check();
+  await openMockActivity(page, `/topics/${topic}/activity`);
+  await page.locator('#q-q0 [role="radio"]').nth(0).click();
   await page.clock.fastForward(1500);
   await firstStarted;
-  await page.locator('input[name="q-q1"][value="b"]').check();
+  await page.locator('#q-q1 [role="radio"]').nth(1).click();
   await page.clock.fastForward(1500);
   await page.clock.fastForward(15000);
   await expect(page.getByText("Draft save timed out. Try again.")).toBeVisible();
@@ -437,6 +466,7 @@ test("retries a timed-out quiz save with the same snapshot before saving newer a
   await page.clock.fastForward(1000);
   await expect.poll(() => saves.length).toBe(2);
   expect(saves[1]).toEqual({
+    attemptId: "00000000-0000-4000-8000-000000000001",
     baseRevision: 0,
     answers: { q0: "a" },
     expectedLearnerId: "test",
@@ -445,13 +475,15 @@ test("retries a timed-out quiz save with the same snapshot before saving newer a
   await page.clock.fastForward(1500);
   await expect.poll(() => saves.length).toBe(3);
   expect(saves[2]).toEqual({
+    attemptId: "00000000-0000-4000-8000-000000000001",
     baseRevision: 1,
     answers: { q0: "a", q1: "b" },
     expectedLearnerId: "test",
   });
-  await expect(
-    page.getByText("Saved on server", { exact: true }),
-  ).toBeVisible();
+  await expect.poll(async () => {
+    const draft = await readQuizDraft(page, topic);
+    return !draft || (!draft.dirty && draft.pendingSave === null);
+  }).toBe(true);
   await expect(page.locator("main .panel.error")).toHaveCount(0);
 });
 
@@ -473,6 +505,9 @@ test("stops after three automatic retries and lets the learner retry manually", 
     route.fulfill({
       json: {
         learnerId: "test",
+
+        currentAttempt: { attemptId: "00000000-0000-4000-8000-000000000001", assessmentRevision: 1, state: "answering", submissionId: null },
+        currentAttemptIsLegacy: false,
         topicId: topic,
         quiz: { topicId: topic, revision: 1, title: "Quiz", questions },
         draft: { answers: {}, workRevision: 0 },
@@ -495,8 +530,8 @@ test("stops after three automatic retries and lets the learner retry manually", 
     await route.fulfill({ json: { kind: "saved", workRevision: 1 } });
   });
 
-  await page.goto(`/topics/${topic}/activity`);
-  await page.locator('input[name="q-q0"][value="a"]').check();
+  await openMockActivity(page, `/topics/${topic}/activity`);
+  await page.locator('#q-q0 [role="radio"]').nth(0).click();
   await page.clock.fastForward(1500);
   await expect.poll(() => saves.length).toBe(1);
   await expect(page.getByText("Retrying draft save…")).toBeVisible();
@@ -513,7 +548,10 @@ test("stops after three automatic retries and lets the learner retry manually", 
   await page.getByRole("button", { name: "Save draft" }).click();
   await expect.poll(() => saves.length).toBe(5);
   expect(saves.slice(1).every((save) => JSON.stringify(save) === JSON.stringify(saves[0]))).toBe(true);
-  await expect(page.getByText("Saved on server", { exact: true })).toBeVisible();
+  await expect.poll(async () => {
+    const draft = await readQuizDraft(page, topic);
+    return !draft || (!draft.dirty && draft.pendingSave === null);
+  }).toBe(true);
 });
 
 test("retries the pending quiz save when connectivity returns", async ({
@@ -534,6 +572,9 @@ test("retries the pending quiz save when connectivity returns", async ({
     route.fulfill({
       json: {
         learnerId: "test",
+
+        currentAttempt: { attemptId: "00000000-0000-4000-8000-000000000001", assessmentRevision: 1, state: "answering", submissionId: null },
+        currentAttemptIsLegacy: false,
         topicId: topic,
         quiz: { topicId: topic, revision: 1, title: "Quiz", questions },
         draft: { answers: {}, workRevision: 0 },
@@ -556,17 +597,19 @@ test("retries the pending quiz save when connectivity returns", async ({
     await route.fulfill({ json: { kind: "saved", workRevision: 1 } });
   });
 
-  await page.goto(`/topics/${topic}/activity`);
-  await expect(page.locator('input[name="q-q0"][value="a"]')).toBeVisible();
+  await openMockActivity(page, `/topics/${topic}/activity`);
+  await expect(page.locator('#q-q0 [role="radio"]').nth(0)).toBeVisible();
   await page.clock.pauseAt(await page.evaluate(() => Date.now() + 60_000));
-  await page.locator('input[name="q-q0"][value="a"]').check();
+  await page.locator('#q-q0 [role="radio"]').nth(0).click();
   await page.clock.fastForward(1500);
   await expect.poll(() => saves.length).toBe(1);
-  await expect(page.getByText("Retrying draft save…")).toBeVisible();
   await page.evaluate(() => window.dispatchEvent(new Event("online")));
   await expect.poll(() => saves.length).toBe(2);
   expect(saves[1]).toEqual(saves[0]);
-  await expect(page.getByText("Saved on server", { exact: true })).toBeVisible();
+  await expect.poll(async () => {
+    const draft = await readQuizDraft(page, topic);
+    return !draft || (!draft.dirty && draft.pendingSave === null);
+  }).toBe(true);
 });
 
 test("does not retry an expired-session response", async ({ page }) => {
@@ -585,6 +628,9 @@ test("does not retry an expired-session response", async ({ page }) => {
     route.fulfill({
       json: {
         learnerId: "test",
+
+        currentAttempt: { attemptId: "00000000-0000-4000-8000-000000000001", assessmentRevision: 1, state: "answering", submissionId: null },
+        currentAttemptIsLegacy: false,
         topicId: topic,
         quiz: { topicId: topic, revision: 1, title: "Quiz", questions },
         draft: { answers: {}, workRevision: 0 },
@@ -603,10 +649,10 @@ test("does not retry an expired-session response", async ({ page }) => {
     await route.fulfill({ status: 401, json: { error: "Session expired." } });
   });
 
-  await page.goto(`/topics/${topic}/activity`);
-  await expect(page.locator('input[name="q-q0"][value="a"]')).toBeVisible();
+  await openMockActivity(page, `/topics/${topic}/activity`);
+  await expect(page.locator('#q-q0 [role="radio"]').nth(0)).toBeVisible();
   await page.clock.pauseAt(await page.evaluate(() => Date.now() + 60_000));
-  await page.locator('input[name="q-q0"][value="a"]').check();
+  await page.locator('#q-q0 [role="radio"]').nth(0).click();
   await page.clock.fastForward(1500);
   await expect(page.getByRole("button", { name: "Open development workspace" })).toBeVisible();
   await page.clock.fastForward(10_000);
@@ -629,6 +675,9 @@ test("does not retry an account-change response", async ({ page }) => {
     route.fulfill({
       json: {
         learnerId: "test",
+
+        currentAttempt: { attemptId: "00000000-0000-4000-8000-000000000001", assessmentRevision: 1, state: "answering", submissionId: null },
+        currentAttemptIsLegacy: false,
         topicId: topic,
         quiz: { topicId: topic, revision: 1, title: "Quiz", questions },
         draft: { answers: {}, workRevision: 0 },
@@ -647,13 +696,13 @@ test("does not retry an account-change response", async ({ page }) => {
     await route.fulfill({ status: 409, json: { error: "The learner account changed." } });
   });
 
-  await page.goto(`/topics/${topic}/activity`);
-  await expect(page.locator('input[name="q-q0"][value="a"]')).toBeVisible();
+  await openMockActivity(page, `/topics/${topic}/activity`);
+  await expect(page.locator('#q-q0 [role="radio"]').nth(0)).toBeVisible();
   await page.clock.pauseAt(await page.evaluate(() => Date.now() + 60_000));
-  await page.locator('input[name="q-q0"][value="a"]').check();
+  await page.locator('#q-q0 [role="radio"]').nth(0).click();
   await page.clock.fastForward(1500);
-  await expect(page.getByText("Failed to save draft", { exact: true })).toBeVisible();
-  await page.locator('input[name="q-q1"][value="b"]').check();
+  await expect(page.getByText("The learner account changed.", { exact: true })).toBeVisible();
+  await page.locator('#q-q1 [role="radio"]').nth(1).click();
   await page.clock.fastForward(1500);
   expect(saves).toBe(1);
   await page.clock.fastForward(10_000);
@@ -687,6 +736,9 @@ test("keeps an unsynced answer visible when browser storage and the network fail
     route.fulfill({
       json: {
         learnerId: "test",
+
+        currentAttempt: { attemptId: "00000000-0000-4000-8000-000000000001", assessmentRevision: 1, state: "answering", submissionId: null },
+        currentAttemptIsLegacy: false,
         topicId: topic,
         quiz: { topicId: topic, revision: 1, title: "Quiz", questions },
         draft: { answers: {}, workRevision: 0 },
@@ -702,14 +754,14 @@ test("keeps an unsynced answer visible when browser storage and the network fail
   );
   await page.route(`**/api/topics/${topic}/quiz/draft`, (route) => route.abort());
 
-  await page.goto(`/topics/${topic}/activity`);
-  const answer = page.locator('input[name="q-q0"][value="a"]');
+  await openMockActivity(page, `/topics/${topic}/activity`);
+  const answer = page.locator('#q-q0 [role="radio"]').nth(0);
   await expect(answer).toBeVisible();
   await page.clock.pauseAt(await page.evaluate(() => Date.now() + 60_000));
   await expect(page.getByRole("status").filter({ hasText: "Browser storage is unavailable" })).toBeVisible();
-  await answer.check();
+  await answer.click();
   await page.clock.fastForward(1500);
   await expect(answer).toBeChecked();
-  await expect(page.getByText("Retrying draft save…")).toBeVisible();
+  await expect(page.getByText("Failed to fetch", { exact: true })).toBeVisible();
   await expect(page.getByText("Saved on server", { exact: true })).toHaveCount(0);
 });

@@ -2,18 +2,29 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion, type Variants } from "motion/react";
+import { ArrowLeft, ArrowRight, Check, CircleAlert, Eraser, LoaderCircle, RotateCcw, Save, X } from "lucide-react";
+import ThemeModeToggle from "./theme-mode-toggle";
+import { Button } from "@/components/ui/button";
+import Choicebox from "@/components/ui/choicebox";
+import FlowButton, { type FlowButtonPhase } from "@/components/ui/flow-button";
+import TreeNav from "@/components/ui/tree-nav";
 import type {
   PublicQuiz,
   PublicQuestion,
 } from "../../../../modules/roadmap/adapters/quiz-content.ts";
 import type { QuizEvaluation } from "../../../../modules/topic-submission/domain/quiz-evaluation.ts";
 import type { Score } from "../../../../modules/topic-submission/domain/evaluation.ts";
-import { quizDrafts, quizSubmissionRequests, type PendingQuizSubmission, type QuizDraftSnapshot, type QuizLocalDraft, type QuizSubmissionRequest } from "../../../../modules/activity-draft/adapters/browser-drafts.ts";
+import type { QuizAttempt } from "../../../../modules/topic-submission/domain/quiz-attempt.ts";
+import { quizDrafts, quizRetryRequests, quizSubmissionRequests, type PendingQuizSubmission, type QuizDraftSnapshot, type QuizLocalDraft, type QuizSubmissionRequest } from "../../../../modules/activity-draft/adapters/browser-drafts.ts";
+import { reconcileQuizRetry } from "../lib/quiz-attempt-transition.ts";
 
 type QuizWorkspaceData = {
   learnerId: string;
   topicId: string;
   quiz: PublicQuiz;
+  currentAttempt: QuizAttempt;
+  currentAttemptIsLegacy: boolean;
   draft: { answers: Record<string, string>; workRevision: number };
   conflict?: Extract<DraftResult, { kind: "conflict" }> | null;
   progress: {
@@ -23,11 +34,12 @@ type QuizWorkspaceData = {
     nextTopicAvailable: boolean;
     nextTopicId: string | null;
   };
-  latestSubmission?: {
+  currentSubmission?: {
     submissionId: string;
     evaluation: QuizEvaluation;
     submittedAt: string;
   };
+  latestSubmission?: { submissionId: string; submittedAt: string; score: Score };
 };
 
 type QuizDraft = { answers: Record<string, string>; workRevision: number };
@@ -37,6 +49,7 @@ type DraftResult =
 
 type QuizSubmissionResult = {
   submissionId: string;
+  attemptId: string;
   evaluation: QuizEvaluation;
   progress: QuizWorkspaceData['progress'];
 };
@@ -46,6 +59,7 @@ function confirmedSubmission(value: QuizSubmissionResult): boolean {
   const score = evaluation?.score;
   const progress = value?.progress;
   return typeof value?.submissionId === 'string' && value.submissionId.length > 0 &&
+    typeof value?.attemptId === 'string' && value.attemptId.length > 0 &&
     !!score && Number.isSafeInteger(score.earned) && score.earned >= 0 &&
     score.earned <= 100 && score.earned % 10 === 0 && score.possible === 100 &&
     typeof evaluation.passed === 'boolean' && evaluation.totalQuestions === 10 &&
@@ -56,13 +70,64 @@ function confirmedSubmission(value: QuizSubmissionResult): boolean {
     Array.isArray(evaluation.questionResults) && evaluation.questionResults.length === 10 &&
     evaluation.questionResults.every(result => !!result && typeof result.questionId === 'string' &&
       typeof result.correct === 'boolean' && Number.isSafeInteger(result.earned) &&
-      (result.selectedChoiceId === null || typeof result.selectedChoiceId === 'string') && typeof result.explanation === 'string') &&
+      (result.selectedChoiceId === null || typeof result.selectedChoiceId === 'string') &&
+      (result.correctChoiceId === undefined || typeof result.correctChoiceId === 'string') &&
+      typeof result.explanation === 'string') &&
     !!progress && typeof progress.completed === 'boolean' && typeof progress.canMarkComplete === 'boolean' &&
     typeof progress.nextTopicAvailable === 'boolean' &&
     (progress.bestScore === null || (!!progress.bestScore && Number.isSafeInteger(progress.bestScore.earned) &&
       Number.isSafeInteger(progress.bestScore.possible) && progress.bestScore.possible > 0 &&
       progress.bestScore.earned >= 0 && progress.bestScore.earned <= progress.bestScore.possible));
 }
+
+const confirmationPopVariants: Variants = {
+  hidden: { opacity: 0, y: 12, scale: 0.96 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    scale: 1,
+    transition: { type: "spring", stiffness: 420, damping: 34, mass: 0.8 },
+  },
+};
+
+const confirmationSequenceVariants: Variants = {
+  hidden: {},
+  visible: { transition: { delayChildren: 0.2, staggerChildren: 0.075 } },
+};
+
+const confirmationSectionVariants: Variants = {
+  hidden: { opacity: 0, y: 9, scale: 0.985 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    scale: 1,
+    transition: { duration: 0.22, ease: "easeOut", when: "beforeChildren", staggerChildren: 0.065 },
+  },
+};
+
+const confirmationListVariants: Variants = {
+  hidden: { opacity: 0, y: 6 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.18, ease: "easeOut", when: "beforeChildren", staggerChildren: 0.045 },
+  },
+};
+
+const confirmationItemVariants: Variants = {
+  hidden: { opacity: 0, y: 8, scale: 0.985 },
+  visible: { opacity: 1, y: 0, scale: 1, transition: { duration: 0.22, ease: "easeOut" } },
+};
+
+const confirmationImmediateVariants: Variants = {
+  hidden: { opacity: 1, x: 0, y: 0, scale: 1 },
+  visible: { opacity: 1, x: 0, y: 0, scale: 1, transition: { duration: 0 } },
+};
+
+const confirmationImmediateSequenceVariants: Variants = {
+  hidden: {},
+  visible: { transition: { delayChildren: 0, staggerChildren: 0 } },
+};
 
 class RequestError extends Error {
   constructor(
@@ -137,21 +202,46 @@ function sameAnswers(first: Record<string, string>, second: Record<string, strin
 }
 
 const RETRY_DELAYS_MS = [1000, 2000, 4000] as const;
+const quizProgressSpringTransition = {
+  type: "spring" as const,
+  stiffness: 180,
+  damping: 28,
+  mass: 0.75,
+};
 const STORAGE_WARNING = "Browser storage is unavailable. Keep this page open until your answers are saved.";
 
 export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { topicId: string; topicTitle: string; categoryTitle: string }) {
+  const prefersReducedMotion = useReducedMotion();
+  const confirmationMotion = prefersReducedMotion === true
+    ? {
+        pop: confirmationImmediateVariants,
+        sequence: confirmationImmediateSequenceVariants,
+        section: confirmationImmediateSequenceVariants,
+        list: confirmationImmediateSequenceVariants,
+        item: confirmationImmediateVariants,
+      }
+    : {
+        pop: confirmationPopVariants,
+        sequence: confirmationSequenceVariants,
+        section: confirmationSectionVariants,
+        list: confirmationListVariants,
+        item: confirmationItemVariants,
+      };
   const [data, setData] = useState<QuizWorkspaceData | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [saveStatus, setSaveStatus] = useState<string>("Loading activity…");
+  const [saveFeedback, setSaveFeedback] = useState<"idle" | "saving" | "saved">("idle");
   const [saveVersion, setSaveVersion] = useState(0);
   const [error, setError] = useState<string>("");
   const [draftError, setDraftError] = useState<string>("");
   const [unauthorized, setUnauthorized] = useState<boolean>(false);
   const [submitting, setSubmitting] = useState<boolean>(false);
+  const [retrying, setRetrying] = useState(false);
+  const [submissionButtonFeedback, setSubmissionButtonFeedback] = useState<Exclude<FlowButtonPhase, "idle"> | null>(null);
   const [pendingSubmission, setPendingSubmission] = useState<PendingQuizSubmission | null>(null);
   const [completing, setCompleting] = useState<boolean>(false);
-  const [showConfirmUnanswered, setShowConfirmUnanswered] =
-    useState<boolean>(false);
+  const [submissionConfirmation, setSubmissionConfirmation] =
+    useState<"incomplete" | "complete" | null>(null);
   const [evaluation, setEvaluation] = useState<QuizEvaluation | null>(null);
   const [conflict, setConflict] = useState<Extract<DraftResult, { kind: "conflict" }> | null>(null);
   const [resolving, setResolving] = useState(false);
@@ -159,11 +249,68 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
   const [hasPendingDraftSave, setHasPendingDraftSave] = useState(false);
   const [storageWarning, setStorageWarning] = useState("");
   const [workspaceLoadRetry, setWorkspaceLoadRetry] = useState(0);
+  const [questionPage, setQuestionPage] = useState(0);
+  const pageHeadingRef = useRef<HTMLHeadingElement>(null);
+  const sidebarRef = useRef<HTMLElement>(null);
+  const confirmationHeadingRef = useRef<HTMLHeadingElement>(null);
+  const confirmationDialogRef = useRef<HTMLDialogElement>(null);
+  const submitButtonRef = useRef<HTMLButtonElement>(null);
+  const submissionButtonSuccessTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const restoreSubmitButtonFocus = useRef(false);
+  const focusPageHeading = useRef(false);
+
+  useEffect(() => {
+    const sidebar = sidebarRef.current;
+    const workspace = sidebar?.closest<HTMLElement>(".quiz-workspace");
+    if (!sidebar || !workspace) return;
+    const updateHeight = () => workspace.style.setProperty("--quiz-sidebar-height", `${sidebar.getBoundingClientRect().height}px`);
+    updateHeight();
+    const observer = new ResizeObserver(updateHeight);
+    observer.observe(sidebar);
+    return () => {
+      observer.disconnect();
+      workspace.style.removeProperty("--quiz-sidebar-height");
+    };
+  }, [data]);
+
+  useEffect(() => {
+    if (focusPageHeading.current) {
+      focusPageHeading.current = false;
+      pageHeadingRef.current?.focus();
+    }
+  }, [questionPage]);
+
+  useEffect(() => {
+    if (!submissionConfirmation || !confirmationDialogRef.current) return;
+    const dialog = confirmationDialogRef.current;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    dialog.showModal();
+    confirmationHeadingRef.current?.focus({ preventScroll: true });
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      if (dialog.open) dialog.close();
+    };
+  }, [submissionConfirmation]);
+
+  useEffect(() => () => {
+    if (submissionButtonSuccessTimer.current !== null) {
+      clearTimeout(submissionButtonSuccessTimer.current);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!restoreSubmitButtonFocus.current || submissionButtonFeedback !== null || !evaluation) return;
+    restoreSubmitButtonFocus.current = false;
+    submitButtonRef.current?.focus({ preventScroll: true });
+  }, [evaluation, submissionButtonFeedback]);
 
   const workRevision = useRef<number>(0);
   const answersRef = useRef<Record<string, string>>({});
   const dirty = useRef<boolean>(false);
   const saving = useRef<boolean>(false);
+  const saveFeedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveFeedbackVisible = useRef(false);
   const draftSaveSettled = useRef<Promise<void> | null>(null);
   const pendingSnapshot = useRef<QuizDraftSnapshot | null>(null);
   const automaticRetries = useRef(0);
@@ -173,11 +320,13 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
   const loading = useRef(false);
   const retryLoadAfterCurrent = useRef(false);
   const submissionInFlight = useRef(false);
+  const retryInFlight = useRef(false);
   const pendingSubmissionRef = useRef<PendingQuizSubmission | null>(null);
   const conflictRef = useRef<Extract<DraftResult, { kind: "conflict" }> | null>(null);
   const pendingLocal = useRef<QuizDraft | null>(null);
   const localWrites = useRef<Promise<unknown>>(Promise.resolve());
   const localTabId = useRef("");
+  const activeAttemptId = useRef<string | null>(null);
   const queueLocalWrite = <T,>(work: () => Promise<T>): Promise<T> => {
     const operation = localWrites.current.catch(() => {}).then(work);
     localWrites.current = operation;
@@ -185,10 +334,13 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
   };
   const preserveLocal = (learnerId: string, snapshot: QuizDraft | null) => {
     pendingLocal.current = snapshot;
+    const attemptId = activeAttemptId.current;
+    if (!attemptId) return;
     const operation = queueLocalWrite(() => quizDrafts.writeCurrent(
       learnerId,
       topicId,
       localTabId.current,
+      attemptId,
       {
         answers: snapshot?.answers ?? answersRef.current,
         baseRevision: snapshot?.workRevision ?? workRevision.current,
@@ -197,7 +349,7 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
     ));
     void operation.catch(() => setStorageWarning(STORAGE_WARNING));
   };
-  const clearLocal = (learnerId: string): Promise<void> => {
+  const clearLocal = (learnerId: string, attemptId = activeAttemptId.current): Promise<void> => {
     pendingLocal.current = null;
     pendingSnapshot.current = null;
     setHasPendingDraftSave(false);
@@ -205,7 +357,8 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
     automaticRetryBlock.current = null;
     if (retryTimer.current) clearTimeout(retryTimer.current);
     retryTimer.current = null;
-    const operation = queueLocalWrite(() => quizDrafts.clear(learnerId, topicId, localTabId.current));
+    if (!attemptId) return Promise.resolve();
+    const operation = queueLocalWrite(() => quizDrafts.clear(learnerId, topicId, localTabId.current, attemptId));
     void operation.catch(() => setStorageWarning(STORAGE_WARNING));
     return operation;
   };
@@ -219,23 +372,72 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
     setStorageWarning("");
     automaticRetryBlock.current = null;
     try {
-      const ws = await request<QuizWorkspaceData>(
+      let ws = await request<QuizWorkspaceData>(
         `/api/topics/${encodeURIComponent(topicId)}/quiz`,
       );
       let tabId = sessionStorage.getItem('mcj-quiz-tab');
       if (!tabId) { tabId = crypto.randomUUID(); sessionStorage.setItem('mcj-quiz-tab', tabId); }
       localTabId.current = tabId;
       await localWrites.current.catch(() => {});
+      if (ws.learnerId) {
+        try {
+          const pendingRetries = await quizRetryRequests.readAll(ws.learnerId, topicId);
+          for (const pendingRetry of pendingRetries) {
+            if (!navigator.onLine) break;
+            try {
+              const transition = await reconcileQuizRetry(pendingRetry.intent, {
+                isOnline: () => navigator.onLine,
+                claim: intent => quizRetryRequests.claim(ws.learnerId, topicId, intent),
+                sendRetry: intent => request(
+                  `/api/topics/${encodeURIComponent(topicId)}/quiz/retry`,
+                  { ...intent, expectedLearnerId: ws.learnerId },
+                ),
+                recordReceipt: receipt => quizRetryRequests.recordReceipt(
+                  ws.learnerId,
+                  topicId,
+                  pendingRetry.intent.sourceSubmissionId,
+                  receipt,
+                ),
+                loadWorkspace: () => request<QuizWorkspaceData>(`/api/topics/${encodeURIComponent(topicId)}/quiz`),
+                clear: () => quizRetryRequests.clear(
+                  ws.learnerId,
+                  topicId,
+                  pendingRetry.intent.sourceSubmissionId,
+                ),
+              });
+              ws = transition.workspace;
+              if (transition.storageWarning) setStorageWarning(STORAGE_WARNING);
+            } catch {
+              // A later reload or Retry action can reuse the same stable source identity.
+              ws = await request<QuizWorkspaceData>(`/api/topics/${encodeURIComponent(topicId)}/quiz`);
+              break;
+            }
+          }
+        } catch {
+          setStorageWarning(STORAGE_WARNING);
+        }
+      }
       let local: QuizLocalDraft | undefined;
       let pending: PendingQuizSubmission | null = null;
       if (ws.learnerId) {
         try {
-          local = await quizDrafts.read(ws.learnerId, topicId, tabId);
+          local = await quizDrafts.read(
+            ws.learnerId,
+            topicId,
+            tabId,
+            ws.currentAttempt.attemptId,
+            ws.currentAttemptIsLegacy,
+          );
         } catch {
           setStorageWarning(STORAGE_WARNING);
         }
         try {
-          pending = await quizSubmissionRequests.read(ws.learnerId, topicId);
+          pending = await quizSubmissionRequests.read(
+            ws.learnerId,
+            topicId,
+            ws.currentAttempt.attemptId,
+            ws.currentAttemptIsLegacy,
+          );
         } catch {
           setStorageWarning(STORAGE_WARNING);
         }
@@ -245,6 +447,26 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
       pendingLocal.current = local?.dirty ? { answers: local.answers, workRevision: local.baseRevision } : null;
       pendingSubmissionRef.current = pending;
       setPendingSubmission(pending);
+      if (activeAttemptId.current && activeAttemptId.current !== ws.currentAttempt.attemptId) {
+        if (retryTimer.current) clearTimeout(retryTimer.current);
+        retryTimer.current = null;
+        if (saveFeedbackTimer.current) clearTimeout(saveFeedbackTimer.current);
+        saveFeedbackTimer.current = null;
+        saveFeedbackVisible.current = false;
+        if (submissionButtonSuccessTimer.current !== null) {
+          clearTimeout(submissionButtonSuccessTimer.current);
+          submissionButtonSuccessTimer.current = null;
+        }
+        setSaveFeedback("idle");
+        setSubmissionButtonFeedback(null);
+        setSubmissionConfirmation(null);
+        setQuestionPage(0);
+        restoreSubmitButtonFocus.current = false;
+        pendingSnapshot.current = null;
+        automaticRetries.current = 0;
+        automaticRetryBlock.current = null;
+      }
+      activeAttemptId.current = ws.currentAttempt.attemptId;
       setData(ws);
       workRevision.current = ws.draft.workRevision;
       conflictRef.current = ws.conflict ?? null;
@@ -256,9 +478,7 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
       if (dirty.current) workRevision.current = pendingLocal.current!.workRevision;
       setSaveStatus(ws.conflict ? "Choose which draft to keep" : dirty.current ? "Unsaved changes" : "All changes saved");
 
-      if (ws.latestSubmission) {
-        setEvaluation(ws.latestSubmission.evaluation);
-      }
+      setEvaluation(ws.currentAttempt.state === "submitted" ? ws.currentSubmission?.evaluation ?? null : null);
       loaded = true;
     } catch (e) {
       if (e instanceof RequestError && e.status === 401) {
@@ -309,18 +529,29 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
       automaticRetryBlock.current = null;
     }
     if (!manual && automaticRetryBlock.current) return false;
-    if (saving.current || conflictRef.current || submissionInFlight.current || pendingSubmissionRef.current || !dirty.current || !data) return false;
+    if (saving.current || conflictRef.current || submissionInFlight.current || pendingSubmissionRef.current ||
+        !dirty.current || !data || data.currentAttempt.state === "submitted") return false;
+    const requestAttemptId = data.currentAttempt.attemptId;
     saving.current = true;
+    saveFeedbackVisible.current = false;
+    if (saveFeedbackTimer.current) clearTimeout(saveFeedbackTimer.current);
+    setSaveFeedback("idle");
+    saveFeedbackTimer.current = setTimeout(() => {
+      saveFeedbackVisible.current = true;
+      setSaveFeedback("saving");
+    }, 250);
+    let savedSuccessfully = false;
     let settle!: () => void;
     draftSaveSettled.current = new Promise<void>(resolve => { settle = resolve; });
     setSaveStatus("Saving draft…");
     try {
       const proposed: QuizDraftSnapshot = {
+        attemptId: data.currentAttempt.attemptId,
         baseRevision: workRevision.current,
         answers: { ...answersRef.current },
       };
       const beginSave = localWrites.current.catch(() => {}).then(() =>
-        quizDrafts.beginSave(data.learnerId, topicId, localTabId.current, proposed),
+        quizDrafts.beginSave(data.learnerId, topicId, localTabId.current, data.currentAttempt.attemptId, proposed),
       );
       localWrites.current = beginSave;
       let sentSnapshot: QuizDraftSnapshot;
@@ -335,6 +566,7 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
       const res = await timedRequest<DraftResult>(
         `/api/topics/${encodeURIComponent(topicId)}/quiz/draft`,
         {
+          attemptId: sentSnapshot.attemptId ?? undefined,
           baseRevision: sentSnapshot.baseRevision,
           answers: sentSnapshot.answers,
           expectedLearnerId: data.learnerId,
@@ -349,7 +581,7 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
         setDraftError("");
         workRevision.current = res.workRevision;
         const acknowledge = localWrites.current.catch(() => {}).then(() =>
-          quizDrafts.acknowledge(data.learnerId, topicId, localTabId.current, sentSnapshot, res.workRevision),
+          quizDrafts.acknowledge(data.learnerId, topicId, localTabId.current, data.currentAttempt.attemptId, sentSnapshot, res.workRevision),
         );
         localWrites.current = acknowledge;
         let latest;
@@ -358,6 +590,7 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
         } catch {
           setStorageWarning(STORAGE_WARNING);
         }
+        if (activeAttemptId.current !== requestAttemptId) return false;
         if (retryTimer.current) clearTimeout(retryTimer.current);
         retryTimer.current = null;
         automaticRetries.current = 0;
@@ -371,12 +604,13 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
           : null;
         setSaveStatus(dirty.current ? "Unsaved changes" : "Saved on server");
         if (dirty.current) setSaveVersion(version => version + 1);
+        savedSuccessfully = !dirty.current;
         return !dirty.current;
       }
       if (res.kind === "conflict") {
         setDraftError("");
         const clearPending = localWrites.current.catch(() => {}).then(() =>
-          quizDrafts.clearPending(data.learnerId, topicId, localTabId.current, sentSnapshot),
+          quizDrafts.clearPending(data.learnerId, topicId, localTabId.current, data.currentAttempt.attemptId, sentSnapshot),
         );
         localWrites.current = clearPending;
         try {
@@ -384,6 +618,7 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
         } catch {
           setStorageWarning(STORAGE_WARNING);
         }
+        if (activeAttemptId.current !== requestAttemptId) return false;
         if (retryTimer.current) clearTimeout(retryTimer.current);
         retryTimer.current = null;
         automaticRetries.current = 0;
@@ -400,6 +635,7 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
       }
       return false;
     } catch (err) {
+      if (activeAttemptId.current !== requestAttemptId) return false;
       const timedOut = err instanceof Error && err.name === "AbortError";
       const message = timedOut
         ? "Draft save timed out. Try again."
@@ -426,6 +662,19 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
       return false;
     } finally {
       saving.current = false;
+      if (saveFeedbackTimer.current) clearTimeout(saveFeedbackTimer.current);
+      saveFeedbackTimer.current = null;
+      if (saveFeedbackVisible.current && savedSuccessfully && !dirty.current) {
+        setSaveFeedback("saved");
+        saveFeedbackTimer.current = setTimeout(() => {
+          saveFeedbackVisible.current = false;
+          setSaveFeedback("idle");
+          saveFeedbackTimer.current = null;
+        }, 700);
+      } else {
+        saveFeedbackVisible.current = false;
+        setSaveFeedback("idle");
+      }
       settle();
       draftSaveSettled.current = null;
     }
@@ -435,6 +684,7 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
 
   useEffect(() => () => {
     if (retryTimer.current) clearTimeout(retryTimer.current);
+    if (saveFeedbackTimer.current) clearTimeout(saveFeedbackTimer.current);
   }, []);
 
   useEffect(() => {
@@ -460,7 +710,13 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
     try {
       const result = await request<DraftResult>(
         `/api/topics/${encodeURIComponent(topicId)}/quiz/draft/resolve`,
-        { conflictId: current.conflictId, choice, baseRevision: current.server.workRevision },
+        {
+          attemptId: data?.currentAttempt.attemptId,
+          conflictId: current.conflictId,
+          choice,
+          baseRevision: current.server.workRevision,
+          expectedLearnerId: data?.learnerId,
+        },
       );
       if (result.kind === "conflict") {
         conflictRef.current = result;
@@ -471,7 +727,7 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
       workRevision.current = result.workRevision;
       const chosen = choice === 'server' ? current.server.answers : current.candidate.answers;
       const local = pendingLocal.current;
-      if (local && JSON.stringify(local.answers) === JSON.stringify(current.candidate.answers)) {
+      if (local && sameAnswers(local.answers, current.candidate.answers)) {
         await clearLocal(data!.learnerId);
       }
       let next = result.nextConflict ?? null;
@@ -479,7 +735,9 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
       if (!next && pendingLocal.current) {
         const pending = pendingLocal.current;
         const saved = await request<DraftResult>(`/api/topics/${encodeURIComponent(topicId)}/quiz/draft`, {
+          attemptId: data?.currentAttempt.attemptId,
           baseRevision: pending.workRevision, answers: pending.answers,
+          expectedLearnerId: data?.learnerId,
         }, 'PUT');
         if (saved.kind === 'conflict') next = saved;
         else { workRevision.current = saved.workRevision; await clearLocal(data!.learnerId); }
@@ -501,14 +759,35 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
     }
   };
 
-  const handleSelect = (questionId: string, choiceId: string) => {
-    if (submissionInFlight.current || pendingSubmissionRef.current) return;
-    const updated = { ...answersRef.current, [questionId]: choiceId };
+  const updateAnswer = (questionId: string, choiceId: string | null) => {
+    if (submissionInFlight.current || pendingSubmissionRef.current || data?.currentAttempt.state === "submitted") return;
+    if (submissionButtonSuccessTimer.current !== null) {
+      clearTimeout(submissionButtonSuccessTimer.current);
+      submissionButtonSuccessTimer.current = null;
+      setSubmissionButtonFeedback(null);
+    }
+    setSubmissionConfirmation(null);
+    const updated = { ...answersRef.current };
+    if (choiceId === null) delete updated[questionId];
+    else updated[questionId] = choiceId;
     answersRef.current = updated;
     preserveLocal(data!.learnerId, { answers: updated, workRevision: workRevision.current });
     setAnswers(updated);
     dirty.current = true;
     setSaveStatus("Unsaved changes");
+  };
+
+  const handleSelect = (questionId: string, choiceId: string) => {
+    updateAnswer(questionId, choiceId);
+  };
+
+  const handleClear = (questionId: string, button: HTMLButtonElement) => {
+    if (!answersRef.current[questionId]?.trim()) return;
+    const firstChoice = button
+      .closest<HTMLElement>(".quiz-question-card")
+      ?.querySelector<HTMLButtonElement>('[role="radio"]:not(:disabled)');
+    firstChoice?.focus({ preventScroll: true });
+    updateAnswer(questionId, null);
   };
 
   // Debounced auto-save on answer change
@@ -522,34 +801,109 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
   }, [answers, save, saveVersion]);
 
   const questions = data?.quiz.questions ?? [];
-  const answeredCount = Object.keys(answers).filter(
-    (k) => answers[k] && answers[k].trim() !== "",
-  ).length;
-  const unansweredCount = Math.max(0, 10 - answeredCount);
+  const answeredCount = questions.filter((question) => answers[question.id]?.trim()).length;
+  const unansweredNumbers = questions.flatMap((question, index) =>
+    answers[question.id]?.trim() ? [] : [index + 1],
+  );
+  const unansweredCount = unansweredNumbers.length;
+  const progressRatio = questions.length > 0 ? answeredCount / questions.length : 0;
+  const progressCountOffset = questions.length > 0
+    ? -(answeredCount / (questions.length + 1)) * 100
+    : 0;
+  const progressTransition = prefersReducedMotion === true
+    ? { duration: 0 }
+    : quizProgressSpringTransition;
+  const incompleteConfirmation = submissionConfirmation === "incomplete";
+  const showFlowSubmitButton = !data || data.currentAttempt.state === "answering" ||
+    !!pendingSubmission || submissionButtonFeedback === "success";
+  const flowSubmitPhase: FlowButtonPhase = submissionButtonFeedback ?? (submitting ? "loading" : "idle");
+  const questionsPerPage = 5;
+  const pageCount = Math.ceil(questions.length / questionsPerPage);
+  const pageStart = questionPage * questionsPerPage;
+  const pageEnd = Math.min(pageStart + questionsPerPage, questions.length);
+  const questionGroupItems = Array.from({ length: pageCount }, (_, index) => {
+    const start = index * questionsPerPage;
+    const end = Math.min(start + questionsPerPage, questions.length);
+    const groupSize = end - start;
+    const groupAnswered = questions.slice(start, end).filter((question) => !!answers[question.id]).length;
 
-  const handleSubmit = async (bypassUnansweredCheck = false) => {
-    if (!data || submissionInFlight.current) return;
-    if (!pendingSubmissionRef.current && conflictRef.current) return;
-    if (!pendingSubmissionRef.current && !bypassUnansweredCheck && unansweredCount > 0) {
-      setShowConfirmUnanswered(true);
+    return {
+      href: "#question-group-" + (index + 1),
+      label: "Questions " + (start + 1) + "–" + end,
+      badge: groupAnswered + "/" + groupSize,
+      ariaLabel: "Questions " + (start + 1) + " to " + end + ", " + groupAnswered + " of " + groupSize + " answered",
+      ariaControls: "quiz-questions",
+      badgeClassName: groupAnswered === groupSize ? "quiz-group-progress--complete" : undefined,
+    };
+  });
+  const changeQuestionPage = (nextPage: number) => {
+    if (nextPage < 0 || nextPage >= pageCount || nextPage === questionPage) return;
+    setSubmissionConfirmation(null);
+    focusPageHeading.current = true;
+    setQuestionPage(nextPage);
+  };
+  const reviewUnansweredQuestions = () => {
+    const firstUnanswered = unansweredNumbers[0];
+    const targetPage = firstUnanswered === undefined
+      ? questionPage
+      : Math.floor((firstUnanswered - 1) / questionsPerPage);
+
+    setSubmissionConfirmation(null);
+    if (targetPage === questionPage) {
+      requestAnimationFrame(() => pageHeadingRef.current?.focus());
       return;
     }
-    setShowConfirmUnanswered(false);
+
+    focusPageHeading.current = true;
+    setQuestionPage(targetPage);
+  };
+
+  const reviewAnswers = () => {
+    setSubmissionConfirmation(null);
+    if (questionPage !== 0) setQuestionPage(0);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => pageHeadingRef.current?.focus({ preventScroll: true }));
+    });
+  };
+
+  const handleSubmit = async (
+    bypassUnansweredCheck = false,
+    bypassCompleteConfirmation = false,
+  ) => {
+    if (!data || submissionInFlight.current) return;
+    const submissionAttemptId = data.currentAttempt.attemptId;
+    if (!pendingSubmissionRef.current && conflictRef.current) return;
+    const isInitialSubmission = data.currentAttempt.state === "answering";
+    if (data.currentAttempt.state === "submitted" && !pendingSubmissionRef.current) return;
+    if (!pendingSubmissionRef.current) {
+      if (!bypassUnansweredCheck && unansweredCount > 0) {
+        setSubmissionConfirmation("incomplete");
+        return;
+      }
+      if (!bypassCompleteConfirmation && unansweredCount === 0) {
+        setSubmissionConfirmation("complete");
+        return;
+      }
+    }
+    setSubmissionConfirmation(null);
     submissionInFlight.current = true;
+    if (isInitialSubmission) setSubmissionButtonFeedback("loading");
     setSubmitting(true);
     setError("");
     const owner = crypto.randomUUID();
     let preparingKey: string | null = null;
+    let initialSubmissionSucceeded = false;
 
     try {
       let pending = pendingSubmissionRef.current;
       if (!pending) {
         const proposed: QuizSubmissionRequest = {
           requestKey: crypto.randomUUID(),
+          attemptId: submissionAttemptId,
           answers: { ...answersRef.current },
           assessmentRevision: data.quiz.revision,
         };
-        const claim = await quizSubmissionRequests.claim(data.learnerId, topicId, proposed, workRevision.current, owner);
+        const claim = await quizSubmissionRequests.claim(data.learnerId, topicId, submissionAttemptId, proposed, workRevision.current, owner);
         pending = claim.pending;
         pendingSubmissionRef.current = pending;
         setPendingSubmission(pending);
@@ -559,7 +913,7 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
         }
       }
       if (pending.phase === 'preparing') {
-        const acquired = await quizSubmissionRequests.acquire(data.learnerId, topicId, pending.request.requestKey, owner);
+        const acquired = await quizSubmissionRequests.acquire(data.learnerId, topicId, submissionAttemptId, pending.request.requestKey, owner);
         if (acquired.kind === 'gone') { await load(); return; }
         if (acquired.kind === 'busy') {
           if (acquired.pending) { pendingSubmissionRef.current = acquired.pending; setPendingSubmission(acquired.pending); }
@@ -573,7 +927,7 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
           preparingKey = pending.request.requestKey;
           if (draftSaveSettled.current) await waitForDraftSave(draftSaveSettled.current);
           if (conflictRef.current) {
-            const cancelled = await quizSubmissionRequests.releasePreparation(data.learnerId, topicId, preparingKey, owner, true);
+            const cancelled = await quizSubmissionRequests.releasePreparation(data.learnerId, topicId, submissionAttemptId, preparingKey, owner, true);
             if (cancelled) { pendingSubmissionRef.current = null; setPendingSubmission(null); }
             else await load();
             preparingKey = null;
@@ -581,12 +935,13 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
           }
           const currentAnswersMatch = sameAnswers(answersRef.current, pending.request.answers);
           const draft = await timedRequest<DraftResult>(`/api/topics/${encodeURIComponent(topicId)}/quiz/draft`, {
+            attemptId: pending.request.attemptId,
             baseRevision: currentAnswersMatch ? workRevision.current : pending.baseRevision,
             answers: pending.request.answers,
             expectedLearnerId: data.learnerId,
           }, 'PUT');
           if (draft.kind === 'conflict') {
-            const cancelled = await quizSubmissionRequests.releasePreparation(data.learnerId, topicId, preparingKey, owner, true);
+            const cancelled = await quizSubmissionRequests.releasePreparation(data.learnerId, topicId, submissionAttemptId, preparingKey, owner, true);
             if (cancelled) {
               pendingSubmissionRef.current = null;
               setPendingSubmission(null);
@@ -608,7 +963,7 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
             await clearLocal(data.learnerId);
             setSaveStatus('Saved on server');
           }
-          const ready = await quizSubmissionRequests.setReady(data.learnerId, topicId, preparingKey, owner);
+          const ready = await quizSubmissionRequests.setReady(data.learnerId, topicId, submissionAttemptId, preparingKey, owner);
           preparingKey = null;
           if (!ready) { await load(); return; }
           pending = { ...pending, phase: 'ready' };
@@ -620,15 +975,45 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
       if (!confirmedSubmission(result)) {
         throw new Error('The submission result could not be confirmed.');
       }
-      await quizSubmissionRequests.clear(data.learnerId, topicId, pending.request.requestKey);
+      const intendedAttemptId = pending.request.attemptId ?? submissionAttemptId;
+      if (result.attemptId !== intendedAttemptId) {
+        throw new Error('The submission response belongs to a different quiz attempt.');
+      }
+      const currentWorkspace = await request<QuizWorkspaceData>(
+        `/api/topics/${encodeURIComponent(topicId)}/quiz`,
+      );
+      await quizSubmissionRequests.clear(data.learnerId, topicId, submissionAttemptId, pending.request.requestKey);
       pendingSubmissionRef.current = null;
       setPendingSubmission(null);
 
-      setEvaluation(result.evaluation);
-      setData((prev) => (prev ? { ...prev, progress: result.progress } : prev));
+      if (currentWorkspace.currentAttempt.attemptId !== result.attemptId ||
+          currentWorkspace.currentSubmission?.submissionId !== result.submissionId) {
+        await clearLocal(data.learnerId, intendedAttemptId).catch(() => {});
+        await load();
+        return;
+      }
+
+      await clearLocal(data.learnerId, intendedAttemptId).catch(() => {});
+      activeAttemptId.current = currentWorkspace.currentAttempt.attemptId;
+      setEvaluation(currentWorkspace.currentAttempt.state === "submitted"
+        ? currentWorkspace.currentSubmission?.evaluation ?? null
+        : null);
+      setData(currentWorkspace);
+      if (isInitialSubmission) {
+        initialSubmissionSucceeded = true;
+        setSubmissionButtonFeedback("success");
+        if (submissionButtonSuccessTimer.current !== null) {
+          clearTimeout(submissionButtonSuccessTimer.current);
+        }
+        submissionButtonSuccessTimer.current = setTimeout(() => {
+          restoreSubmitButtonFocus.current = document.activeElement === submitButtonRef.current;
+          submissionButtonSuccessTimer.current = null;
+          setSubmissionButtonFeedback(null);
+        }, 1800);
+      }
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (err) {
-      if (preparingKey) await quizSubmissionRequests.releasePreparation(data.learnerId, topicId, preparingKey, owner).catch(() => {});
+      if (preparingKey) await quizSubmissionRequests.releasePreparation(data.learnerId, topicId, submissionAttemptId, preparingKey, owner).catch(() => {});
       if (err instanceof RequestError && err.status === 401) {
         setUnauthorized(true);
         setError("Your session has ended. Open the workspace again to recover your submission.");
@@ -645,7 +1030,118 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
         : "Could not prepare your submission. Check browser storage and try again.");
     } finally {
       submissionInFlight.current = false;
+      if (isInitialSubmission && !initialSubmissionSucceeded) setSubmissionButtonFeedback(null);
       setSubmitting(false);
+    }
+  };
+
+  const handleRetry = async () => {
+    if (!data || data.currentAttempt.state !== "submitted" || !data.currentAttempt.submissionId ||
+        retryInFlight.current || submissionInFlight.current || pendingSubmissionRef.current || completing) return;
+
+    retryInFlight.current = true;
+    setRetrying(true);
+    setError("");
+    setDraftError("");
+    let browserStorageFailed = false;
+
+    try {
+      const pendingSave = draftSaveSettled.current;
+      if (pendingSave) await waitForDraftSave(pendingSave);
+      await localWrites.current.catch(() => {});
+      if (saving.current || submissionInFlight.current) {
+        throw new Error("Wait for the current save to finish before starting Retry.");
+      }
+
+      const learnerId = data.learnerId;
+      const intent = {
+        sourceSubmissionId: data.currentAttempt.submissionId,
+        expectedAttemptId: data.currentAttempt.attemptId,
+        baseRevision: data.draft.workRevision,
+      };
+      const transition = await reconcileQuizRetry(intent, {
+        isOnline: () => navigator.onLine,
+        claim: value => quizRetryRequests.claim(learnerId, topicId, value).catch(error => {
+          browserStorageFailed = true;
+          throw error;
+        }),
+        sendRetry: value => request(
+          `/api/topics/${encodeURIComponent(topicId)}/quiz/retry`,
+          { ...value, expectedLearnerId: learnerId },
+        ),
+        recordReceipt: receipt => quizRetryRequests.recordReceipt(
+          learnerId,
+          topicId,
+          intent.sourceSubmissionId,
+          receipt,
+        ).catch(error => {
+          browserStorageFailed = true;
+          throw error;
+        }),
+        loadWorkspace: () => request<QuizWorkspaceData>(
+          `/api/topics/${encodeURIComponent(topicId)}/quiz`,
+        ),
+        clear: () => quizRetryRequests.clear(
+          learnerId,
+          topicId,
+          intent.sourceSubmissionId,
+        ).catch(error => {
+          browserStorageFailed = true;
+          throw error;
+        }),
+      });
+
+      const workspace = transition.workspace;
+      if (transition.storageWarning) setStorageWarning(STORAGE_WARNING);
+      if (retryTimer.current) clearTimeout(retryTimer.current);
+      retryTimer.current = null;
+      if (saveFeedbackTimer.current) clearTimeout(saveFeedbackTimer.current);
+      saveFeedbackTimer.current = null;
+      saveFeedbackVisible.current = false;
+      if (submissionButtonSuccessTimer.current !== null) {
+        clearTimeout(submissionButtonSuccessTimer.current);
+        submissionButtonSuccessTimer.current = null;
+      }
+      restoreSubmitButtonFocus.current = false;
+      setSaveFeedback("idle");
+      setSubmissionButtonFeedback(null);
+      setSubmissionConfirmation(null);
+      setQuestionPage(0);
+      setHasPendingDraftSave(false);
+      pendingSnapshot.current = null;
+      pendingLocal.current = null;
+      dirty.current = false;
+      workRevision.current = workspace.draft.workRevision;
+      activeAttemptId.current = workspace.currentAttempt.attemptId;
+      answersRef.current = workspace.conflict?.candidate.answers ?? workspace.draft.answers ?? {};
+      setAnswers(answersRef.current);
+      setSaveStatus(workspace.conflict ? "Choose which draft to keep" : "All changes saved");
+      conflictRef.current = workspace.conflict ?? null;
+      setConflict(workspace.conflict ?? null);
+      setConflictChanged(false);
+      pendingSubmissionRef.current = null;
+      setPendingSubmission(null);
+      setEvaluation(workspace.currentAttempt.state === "submitted"
+        ? workspace.currentSubmission?.evaluation ?? null
+        : null);
+      setData(workspace);
+
+      // Reload the same authoritative attempt with its local recovery records. If a
+      // second client advances it again, this GET adopts that newer server state.
+      await load();
+      if (transition.storageWarning || browserStorageFailed) setStorageWarning(STORAGE_WARNING);
+      requestAnimationFrame(() => pageHeadingRef.current?.focus({ preventScroll: true }));
+      window.scrollTo({ top: 0, behavior: prefersReducedMotion ? "auto" : "smooth" });
+    } catch (err) {
+      if (browserStorageFailed) {
+        setStorageWarning(STORAGE_WARNING);
+        setError("Browser storage is unavailable. Retry was not started. Keep this page open, then try again.");
+      } else {
+        setError(err instanceof Error ? err.message : "Could not start Retry.");
+      }
+    } finally {
+      retryInFlight.current = false;
+      setRetrying(false);
     }
   };
 
@@ -682,35 +1178,38 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
 
   if (unauthorized) {
     return (
-      <main className="entry-panel">
-        <p className="eyebrow">MasterCangjie · Development Session</p>
-        <h1>Multiple-choice Activity</h1>
-        <p>Open the development learner workspace to practice this multiple-choice activity.</p>
-        <p>
-          <Link href={`/topics/${topicId}`}>Back to lesson</Link>
-        </p>
-        <button
-          type="button"
-          className="primary"
-          onClick={async () => {
-            await request('/api/session', {});
-            setUnauthorized(false);
-            void load();
-          }}
-        >
-          Open development workspace
-        </button>
-        {error && <p role="alert">{error}</p>}
-      </main>
+      <div className="quiz-workspace">
+        <main className="entry-panel">
+          <h1>Multiple-choice Activity</h1>
+          <p className="quiz-activity-kind">MasterCangjie · Development Session</p>
+          <p>Open the development learner workspace to practice this multiple-choice activity.</p>
+          <p>
+            <Link href={`/topics/${topicId}`}>Back to lesson</Link>
+          </p>
+          <button
+            type="button"
+            className="primary"
+            onClick={async () => {
+              await request('/api/session', {});
+              setUnauthorized(false);
+              void load();
+            }}
+          >
+            Open development workspace
+          </button>
+          {error && <p role="alert">{error}</p>}
+        </main>
+      </div>
     );
   }
 
   if (!data && !error) {
     return (
-      <div className="workspace-shell">
+      <div className="workspace-shell quiz-workspace">
         <header className="topbar">
           <Link href="/">MasterCangjie</Link>
           <span className="muted">Multiple-choice activity</span>
+          <ThemeModeToggle />
         </header>
         <main>
           <p>Loading multiple-choice assessment…</p>
@@ -721,10 +1220,11 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
 
   if (error && !data) {
     return (
-      <div className="workspace-shell">
+      <div className="workspace-shell quiz-workspace">
         <header className="topbar">
           <Link href="/">MasterCangjie</Link>
           <span className="muted">Multiple-choice activity</span>
+          <ThemeModeToggle />
         </header>
         <main>
           <div className="panel error">
@@ -740,62 +1240,29 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
   const resultFeedbackMap = new Map(
     evaluation?.questionResults.map((r) => [r.questionId, r]) ?? [],
   );
+  const submittedAttempt = data?.currentAttempt.state === "submitted";
 
   return (
-    <div className="workspace-shell">
+    <div className="workspace-shell quiz-workspace">
       <header className="topbar">
         <Link href="/">MasterCangjie</Link>
         <span className="muted">{categoryTitle}</span>
-        <div style={{ marginLeft: "auto" }}>
-          <Link href={`/topics/${topicId}`}>← Back to lesson</Link>
+        <div className="quiz-header-actions">
+          <Link href={`/topics/${topicId}`}><ArrowLeft size={17} aria-hidden="true" /> Back to lesson</Link>
         </div>
+        <ThemeModeToggle />
       </header>
 
       <main>
-        <div className="breadcrumb">
-          <Link href="/">{categoryTitle}</Link>
-          <span>/</span>
-          <Link href={`/topics/${topicId}`}>{topicTitle}</Link>
-          <span>/</span>
-          <span>Activity</span>
-        </div>
-
-        <div className="workspace-heading">
-          <div>
-            <p className="eyebrow">Multiple-choice Activity (10 Questions)</p>
-            <h1>{data?.quiz.title}</h1>
-          </div>
-          <div className="progress-summary">
-            <span>
-              Best score:{" "}
-              {data?.progress.bestScore
-                ? `${data.progress.bestScore.earned}/${data.progress.bestScore.possible} (${data.progress.bestScore.earned}%)`
-                : "Not submitted"}
-            </span>
-            <span>
-              Status:{" "}
-              {data?.progress.completed ? (
-                <strong style={{ color: "#128361" }}>Completed</strong>
-              ) : data?.progress.canMarkComplete ? (
-                <strong style={{ color: "#b57c00" }}>
-                  Passed · Awaiting completion
-                </strong>
-              ) : (
-                "Not completed"
-              )}
-            </span>
-          </div>
-        </div>
-
         {(error || draftError) && (
-          <div className="panel error" style={{ marginBottom: "1.5rem" }}>
+          <div className="panel error quiz-message" role="alert">
             {error && <p>{error}</p>}
             {draftError && <p>{draftError}</p>}
           </div>
         )}
 
         {pendingSubmission && (
-          <div className="panel notice" role="status" style={{ marginBottom: "1.5rem" }}>
+          <div className="panel notice quiz-message" role="status">
             <p>{pendingSubmission.phase === 'preparing'
               ? 'Your submission is being prepared. Recover it if this is interrupted.'
               : 'Your submission is waiting for confirmation. It uses the answers you submitted, which may differ from your current draft. Recover it before starting another attempt.'}</p>
@@ -826,35 +1293,18 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
         {/* Post-submission score banner */}
         {evaluation && (
           <div
-            className="panel"
-            style={{
-              marginBottom: "1.5rem",
-              borderColor: evaluation.passed ? "#128361" : "#b22c2c",
-              backgroundColor: evaluation.passed ? "#f0f9f6" : "#fff5f5",
-            }}
+            className={`panel quiz-result-banner ${evaluation.passed ? "quiz-result-banner--passed" : "quiz-result-banner--failed"}`}
+            role="status"
+            aria-live="polite"
           >
-            <p className="eyebrow">Latest Submission Result</p>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                flexWrap: "wrap",
-                gap: "1rem",
-              }}
-            >
+            <h2 className="quiz-result-title">Latest submission result</h2>
+            <div className="quiz-result-content">
               <div>
-                <p
-                  className="score"
-                  style={{
-                    margin: 0,
-                    color: evaluation.passed ? "#128361" : "#b22c2c",
-                  }}
-                >
+                <p className={`score ${evaluation.passed ? "quiz-score--passed" : "quiz-score--failed"}`}>
                   {evaluation.score.earned} / {evaluation.score.possible} (
                   {evaluation.passed ? "Passed!" : "Needs at least 60 to pass"})
                 </p>
-                <p className="muted" style={{ margin: ".4rem 0 0" }}>
+                <p className="muted quiz-result-breakdown">
                   {evaluation.correctCount} correct ·{" "}
                   {10 - evaluation.correctCount - evaluation.unansweredCount}{" "}
                   incorrect · {evaluation.unansweredCount} unanswered
@@ -863,51 +1313,36 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
 
               {/* UC-14: Mark complete action */}
               {data?.progress.canMarkComplete && !data?.progress.completed && (
-                <div style={{ textAlign: "right" }}>
-                  <p
-                    style={{
-                      margin: "0 0 .5rem",
-                      fontSize: ".9rem",
-                      color: "#31665e",
-                      fontWeight: 600,
-                    }}
-                  >
+                <div className="quiz-completion-action">
+                  <p>
                     You passed! Mark this topic complete to unlock the next
                     topic:
                   </p>
                   <button
                     type="button"
-                    className="primary"
+                    className="primary quiz-complete-button"
                     onClick={handleMarkComplete}
                     disabled={completing}
-                    style={{ fontSize: "1.05rem", padding: ".7rem 1.4rem" }}
                   >
-                    {completing ? "Completing topic…" : "Mark complete ✓"}
+                    {completing ? "Completing topic…" : <><Check size={16} aria-hidden="true" /> Mark complete</>}
                   </button>
                 </div>
               )}
 
               {data?.progress.completed && (
-                <div style={{ textAlign: "right" }}>
-                  <p
-                    style={{
-                      margin: "0 0 .5rem",
-                      fontWeight: 700,
-                      color: "#128361",
-                    }}
-                  >
-                    ✓ Topic completed!
+                <div className="quiz-completion-action">
+                  <p className="quiz-topic-completed">
+                    Topic completed!
                   </p>
                   <Link
                     className="activity-link"
-                    style={{ margin: 0 }}
                     href={
                       data?.progress.nextTopicId
                         ? `/topics/${data.progress.nextTopicId}`
                         : "/"
                     }
                   >
-                    Continue to next topic →
+                    Continue to next topic <ArrowRight size={16} aria-hidden="true" />
                   </Link>
                 </div>
               )}
@@ -915,209 +1350,500 @@ export default function QuizWorkspace({ topicId, topicTitle, categoryTitle }: { 
           </div>
         )}
 
-        {/* Confirmation dialog for unanswered questions */}
-        {showConfirmUnanswered && (
-          <div className="panel notice" style={{ marginBottom: "1.5rem" }}>
-            <h3>Incomplete Activity Warning</h3>
-            <p>
-              You have {unansweredCount} unanswered question
-              {unansweredCount > 1 ? "s" : ""}. Unanswered questions receive 0
-              points with no partial credit.
-            </p>
-            <div className="actions" style={{ marginTop: "1rem" }}>
-              <button
-                type="button"
-                className="primary"
-                onClick={() => handleSubmit(true)}
-                disabled={submitting}
-              >
-                Submit anyway (0 points for unanswered)
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowConfirmUnanswered(false)}
-              >
-                Return to questions
-              </button>
+        {!evaluation && data?.progress.canMarkComplete && !data.progress.completed && (
+          <div className="panel quiz-result-banner quiz-result-banner--passed">
+            <div className="quiz-result-content">
+              <div className="quiz-completion-action">
+                <p>Your best score still qualifies. Mark this topic complete to unlock the next topic:</p>
+                <button
+                  type="button"
+                  className="primary quiz-complete-button"
+                  onClick={handleMarkComplete}
+                  disabled={completing}
+                >
+                  {completing ? "Completing topic…" : <><Check size={16} aria-hidden="true" /> Mark complete</>}
+                </button>
+              </div>
             </div>
           </div>
         )}
 
-        {/* Question cards */}
-        <div style={{ display: "grid", gap: "1.25rem" }}>
-          {questions.map((q: PublicQuestion, idx: number) => {
-            const selected = answers[q.id];
-            const feedback = resultFeedbackMap.get(q.id);
-
-            return (
-              <div
-                key={q.id}
-                className="panel"
-                id={`q-${q.id}`}
-                style={{
-                  borderColor: feedback
-                    ? feedback.correct
-                      ? "#128361"
-                      : "#b22c2c"
-                    : undefined,
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "baseline",
-                    gap: "1rem",
-                  }}
+        {!evaluation && data?.progress.completed && (
+          <div className="panel quiz-result-banner quiz-result-banner--passed">
+            <div className="quiz-result-content">
+              <div className="quiz-completion-action">
+                <p className="quiz-topic-completed">Topic completed!</p>
+                <Link
+                  className="activity-link"
+                  href={data.progress.nextTopicId ? `/topics/${data.progress.nextTopicId}` : "/"}
                 >
-                  <p className="eyebrow" style={{ margin: 0 }}>
-                    Question {idx + 1} of 10
-                  </p>
-                  {feedback ? (
-                    <span
-                      style={{
-                        fontWeight: 700,
-                        fontSize: ".9rem",
-                        color: feedback.correct ? "#128361" : "#b22c2c",
-                      }}
-                    >
-                      {feedback.correct
-                        ? "✓ Correct (+10 pts)"
-                        : feedback.selectedChoiceId
-                          ? "✗ Incorrect (0 pts)"
-                          : "Unanswered (0 pts)"}
-                    </span>
-                  ) : (
-                    <span className="muted" style={{ fontSize: ".85rem" }}>
-                      {selected ? "● Answered" : "○ Not answered"}
-                    </span>
-                  )}
-                </div>
-
-                <h2 style={{ fontSize: "1.15rem", margin: ".6rem 0 1rem" }}>
-                  {q.prompt}
-                </h2>
-
-                <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
-                  <legend className="sr-only" style={{ display: "none" }}>
-                    Choices for Question {idx + 1}
-                  </legend>
-                  <div style={{ display: "grid", gap: ".6rem" }}>
-                    {q.choices.map((c) => {
-                      const isChosen = selected === c.id;
-                      return (
-                        <label
-                          key={c.id}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: ".75rem",
-                            padding: ".75rem 1rem",
-                            border: `2px solid ${isChosen ? "var(--accent)" : "var(--line)"}`,
-                            borderRadius: "7px",
-                            cursor: "pointer",
-                            background: isChosen ? "#e7f2f0" : "#fff",
-                            fontWeight: isChosen ? 600 : 400,
-                          }}
-                        >
-                          <input
-                            type="radio"
-                            disabled={!!conflict || submitting || !!pendingSubmission}
-                            name={`q-${q.id}`}
-                            value={c.id}
-                            checked={isChosen}
-                            onChange={() => handleSelect(q.id, c.id)}
-                            style={{ width: "18px", height: "18px" }}
-                          />
-                          <span>{c.text}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </fieldset>
-
-                {/* Tutor explanation after submission */}
-                {feedback && (
-                  <div
-                    style={{
-                      marginTop: "1rem",
-                      padding: ".85rem 1rem",
-                      background: "#f8fafb",
-                      borderLeft: `4px solid ${feedback.correct ? "#128361" : "#b57c00"}`,
-                      borderRadius: "4px",
-                    }}
-                  >
-                    <p
-                      style={{
-                        margin: "0 0 .3rem",
-                        fontWeight: 700,
-                        fontSize: ".9rem",
-                      }}
-                    >
-                      Cangjie Tutor Explanation:
-                    </p>
-                    <p style={{ margin: 0, fontSize: ".95rem" }}>
-                      {feedback.explanation}
-                    </p>
-                  </div>
-                )}
+                  Continue to next topic <ArrowRight size={16} aria-hidden="true" />
+                </Link>
               </div>
-            );
-          })}
-        </div>
-
-        {/* Bottom submit bar */}
-        <div
-          className="panel"
-          style={{
-            marginTop: "2rem",
-            position: "sticky",
-            bottom: "1rem",
-            boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
-            zIndex: 10,
-          }}
-        >
-          <div className="save-row">
-            <div>
-              <p style={{ fontWeight: 600, margin: 0 }}>
-                {answeredCount} of 10 answered{" "}
-                {unansweredCount > 0
-                  ? `(${unansweredCount} remaining)`
-                  : "(Complete)"}
-              </p>
-              <p
-                className="muted"
-                style={{ fontSize: ".8rem", margin: ".2rem 0 0" }}
-              >
-                {saveStatus}
-              </p>
-              {storageWarning && <p role="status">{storageWarning}</p>}
-            </div>
-
-            <div className="actions">
-              <button
-                type="button"
-                onClick={() => void save(true)}
-                disabled={!!conflict || submitting || !!pendingSubmission || saving.current || !dirty.current}
-              >
-                Save draft
-              </button>
-              <button
-                type="button"
-                className="primary"
-                onClick={() => handleSubmit(false)}
-                disabled={submitting || (!!conflict && !pendingSubmission)}
-              >
-                {submitting
-                  ? "Evaluating answers…"
-                  : pendingSubmission
-                    ? "Recover submission"
-                  : evaluation
-                    ? "Submit retry"
-                    : "Submit activity"}
-              </button>
             </div>
           </div>
+        )}
+
+        <div className="quiz-layout">
+          <aside ref={sidebarRef} className="quiz-sidebar" aria-labelledby="quiz-progress-heading">
+            <div className="quiz-sidebar-title">
+              <h1>{data?.quiz.title}</h1>
+              {data?.quiz.title !== topicTitle && <p className="quiz-activity-kind">{topicTitle}</p>}
+            </div>
+            <h2 id="quiz-progress-heading">Your progress</h2>
+            <p className="quiz-progress-count">
+              <strong>
+                <span className="sr-only">{answeredCount}</span>
+                <span className="quiz-progress-count-window" aria-hidden="true">
+                  <motion.span
+                    className="quiz-progress-count-track"
+                    initial={false}
+                    animate={{ y: `${progressCountOffset}%` }}
+                    transition={progressTransition}
+                  >
+                    {Array.from({ length: questions.length + 1 }, (_, count) => (
+                      <span className="quiz-progress-count-step" key={count}>{count}</span>
+                    ))}
+                  </motion.span>
+                </span>
+              </strong>
+              <span> / {questions.length} answered</span>
+            </p>
+            <div
+              className="quiz-progress-bar"
+              role="progressbar"
+              aria-label="Questions answered"
+              aria-valuemin={0}
+              aria-valuemax={questions.length}
+              aria-valuenow={answeredCount}
+              aria-valuetext={`${answeredCount} of ${questions.length} questions answered`}
+            >
+              <motion.span
+                className="quiz-progress-fill"
+                initial={false}
+                animate={{ scaleX: progressRatio }}
+                transition={progressTransition}
+              />
+            </div>
+            <nav className="quiz-page-nav" aria-label="Question groups">
+              <TreeNav
+                items={questionGroupItems}
+                activeHref={"#question-group-" + (questionPage + 1)}
+                rowHeight={44}
+                className="quiz-tree-nav"
+                onSelect={(item, event) => {
+                  event.preventDefault();
+                  const nextPage = questionGroupItems.findIndex((group) => group.href === item.href);
+                  changeQuestionPage(nextPage);
+                }}
+              />
+            </nav>
+            {(data?.progress.bestScore || data?.progress.completed || data?.progress.canMarkComplete) && (
+              <div className="quiz-sidebar-summary">
+                {data?.progress.bestScore && <p>Best score <strong>{data.progress.bestScore.earned}/{data.progress.bestScore.possible}</strong></p>}
+                {data?.progress.completed ? <p className="quiz-progress--complete">Topic completed</p> : data?.progress.canMarkComplete ? <p className="quiz-progress--awaiting">Passed · Awaiting completion</p> : null}
+              </div>
+            )}
+          </aside>
+
+          <section className="quiz-question-area" id="quiz-questions" aria-labelledby="quiz-page-heading">
+            <div className="quiz-page-heading-row">
+              <h2 id="quiz-page-heading" ref={pageHeadingRef} tabIndex={-1}>Questions {pageStart + 1}–{pageEnd}</h2>
+              <span>Page {questionPage + 1} of {pageCount}</span>
+            </div>
+            <div className="quiz-question-list">
+          {questions.slice(pageStart, pageEnd).map((q: PublicQuestion, pageIndex: number) => {
+            const idx = pageStart + pageIndex;
+            const selected = answers[q.id];
+            const feedback = resultFeedbackMap.get(q.id);
+            const submittedChoiceId = feedback?.selectedChoiceId ?? null;
+            const currentChoiceId = selected ?? null;
+            const draftChanged = !!feedback && currentChoiceId !== submittedChoiceId;
+            const resultStatus = feedback && !draftChanged
+              ? feedback.correct
+                ? "Correct"
+                : feedback.selectedChoiceId
+                  ? "Mistake"
+                  : "Not answered"
+              : selected
+                ? "Answered"
+                : "Not answered";
+            const resultStatusKind = feedback && !draftChanged
+              ? feedback.correct
+                ? "correct"
+                : feedback.selectedChoiceId
+                  ? "mistake"
+                  : "not-answered"
+              : selected
+                ? "answered"
+                : "not-answered";
+            const statusId = `question-status-${q.id}`;
+            const draftStatusId = `question-draft-status-${q.id}`;
+            const promptId = `question-prompt-${q.id}`;
+
+            return (
+              <section
+                key={q.id}
+                className="quiz-question-card"
+                id={`q-${q.id}`}
+                aria-labelledby={promptId}
+              >
+                <div className="quiz-question-meta">
+                  <p className="quiz-question-index">Question {idx + 1} of 10</p>
+                  <div className="quiz-question-status">
+                    <AnimatePresence initial={false} mode="wait">
+                      <motion.span
+                        key={resultStatusKind}
+                        id={statusId}
+                        className={`quiz-state-label quiz-state-label--${resultStatusKind}`}
+                        initial={{
+                          opacity: 0,
+                          y: prefersReducedMotion ? 0 : 4,
+                          scale: prefersReducedMotion ? 1 : 0.96,
+                        }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{
+                          opacity: 0,
+                          y: prefersReducedMotion ? 0 : -3,
+                          scale: prefersReducedMotion ? 1 : 0.98,
+                        }}
+                        transition={{
+                          y: { type: "spring", stiffness: 440, damping: 36, mass: 0.55 },
+                          scale: { duration: 0.2, ease: [0.16, 1, 0.3, 1] },
+                          opacity: { duration: 0.16, ease: [0.16, 1, 0.3, 1] },
+                        }}
+                      >
+                        {resultStatusKind === "correct" && <Check size={15} aria-hidden="true" />}
+                        {resultStatusKind === "mistake" && <X size={15} aria-hidden="true" />}
+                        {resultStatus}
+                      </motion.span>
+                    </AnimatePresence>
+                    {draftChanged && (
+                      <span className="quiz-draft-status" id={draftStatusId}>
+                        Draft changed · not evaluated
+                      </span>
+                    )}
+                    <AnimatePresence initial={false}>
+                      {selected?.trim() && (
+                        <motion.div
+                          key="clear-answer"
+                          className="inline-flex"
+                          initial={{ opacity: 0, x: prefersReducedMotion ? 0 : 5 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          exit={{
+                            opacity: 0,
+                            x: prefersReducedMotion ? 0 : 3,
+                            transition: { duration: 0.12, ease: "easeIn" },
+                          }}
+                          transition={{
+                            x: { type: "spring", stiffness: 460, damping: 38, mass: 0.5 },
+                            opacity: { duration: 0.16, ease: [0.16, 1, 0.3, 1] },
+                          }}
+                        >
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="quiz-clear-answer h-11 min-h-11 gap-1.5 px-3"
+                            aria-label={`Clear answer to Question ${idx + 1}`}
+                            disabled={submittedAttempt || !!conflict || submitting || !!pendingSubmission}
+                            onClick={(event) => handleClear(q.id, event.currentTarget)}
+                          >
+                            <Eraser aria-hidden="true" />
+                            Clear
+                          </Button>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                </div>
+
+                <h3 className="quiz-question-prompt" id={promptId}>
+                  {q.prompt}
+                </h3>
+
+                <fieldset className="quiz-choice-group" aria-describedby={`${statusId}${draftChanged ? ` ${draftStatusId}` : ""}`}>
+                  <legend className="sr-only">Choices for Question {idx + 1}</legend>
+                  <Choicebox
+                    className="quiz-choice-list"
+                    labelledBy={promptId}
+                    describedBy={`${statusId}${draftChanged ? ` ${draftStatusId}` : ""}`}
+                    name={`q-${q.id}`}
+                    value={selected ?? ""}
+                    onChange={(choice) => handleSelect(q.id, choice as string)}
+                    disabled={submittedAttempt || !!conflict || submitting || !!pendingSubmission}
+                    options={q.choices.map((choice) => {
+                      const isChosen = selected === choice.id;
+                      const isSubmitted = !!feedback && submittedChoiceId === choice.id;
+                      const isCorrectAnswer = !!feedback && (
+                        feedback.correctChoiceId === choice.id ||
+                        (feedback.correct && submittedChoiceId === choice.id)
+                      );
+                      const isMistakenSubmission = isSubmitted && !feedback.correct;
+                      const choiceLabels = [
+                        isSubmitted ? (draftChanged ? "Submitted answer" : "Your answer") : null,
+                        isCorrectAnswer ? "Correct answer" : null,
+                        draftChanged && isChosen ? "Current answer" : null,
+                      ].filter((label): label is string => !!label);
+                      const choiceClassName = [
+                        "quiz-choice",
+                        isChosen ? "quiz-choice--selected" : "",
+                        isSubmitted ? "quiz-choice--submitted" : "",
+                        isMistakenSubmission ? "quiz-choice--mistake" : "",
+                        isCorrectAnswer ? "quiz-choice--correct" : "",
+                        draftChanged && isChosen ? "quiz-choice--current" : "",
+                      ].filter(Boolean).join(" ");
+                      return {
+                        id: choice.id,
+                        title: choice.text,
+                        className: choiceClassName,
+                        meta: choiceLabels.length > 0 ? (
+                          <span className="quiz-choice-labels">
+                            {choiceLabels.map((label) => <span key={label} className="quiz-choice-label">{label}</span>)}
+                          </span>
+                        ) : undefined,
+                      };
+                    })}
+                  />
+                </fieldset>
+
+                {/* The explanation and answer key are available only in a confirmed result. */}
+                {feedback && (
+                  <div className="quiz-explanation">
+                    <p className="quiz-explanation-heading">Tutor explanation</p>
+                    <p className="quiz-explanation-copy">{feedback.explanation}</p>
+                  </div>
+                )}
+              </section>
+            );
+          })}
+            </div>
+
+            {submissionConfirmation && (
+              <motion.dialog
+                ref={confirmationDialogRef}
+                className="quiz-confirm-dialog"
+                variants={confirmationMotion.pop}
+                initial="hidden"
+                animate="visible"
+                aria-labelledby={incompleteConfirmation ? "quiz-confirm-title" : "quiz-confirm-ready-title"}
+                aria-describedby={incompleteConfirmation
+                  ? "quiz-confirm-description quiz-confirm-unanswered-label quiz-confirm-unanswered-list"
+                  : "quiz-confirm-ready-status quiz-confirm-ready-description"}
+                onKeyDown={(event) => {
+                  if (event.key !== "Tab") return;
+
+                  const dialog = event.currentTarget;
+                  const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
+                    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+                  ));
+                  const firstFocusable = focusable[0];
+                  const lastFocusable = focusable[focusable.length - 1];
+                  if (!firstFocusable || !lastFocusable) {
+                    event.preventDefault();
+                    return;
+                  }
+
+                  const activeElement = document.activeElement;
+                  const focusOutsideDialog = !dialog.contains(activeElement);
+                  const focusOnHeading = activeElement === confirmationHeadingRef.current;
+
+                  if (event.shiftKey && (
+                    activeElement === firstFocusable || focusOnHeading || focusOutsideDialog
+                  )) {
+                    event.preventDefault();
+                    lastFocusable.focus();
+                  } else if (!event.shiftKey && (
+                    activeElement === lastFocusable || focusOutsideDialog
+                  )) {
+                    event.preventDefault();
+                    firstFocusable.focus();
+                  }
+                }}
+                onCancel={(event) => {
+                  event.preventDefault();
+                  setSubmissionConfirmation(null);
+                  requestAnimationFrame(() => submitButtonRef.current?.focus({ preventScroll: true }));
+                }}
+              >
+                <motion.div
+                  className="quiz-confirm-content"
+                  variants={confirmationMotion.sequence}
+                  initial="hidden"
+                  animate="visible"
+                >
+                    <motion.div className="quiz-confirm-heading" variants={confirmationMotion.section}>
+                      <motion.span
+                        className={`quiz-confirm-icon${incompleteConfirmation ? "" : " quiz-confirm-ready-icon"}`}
+                        variants={confirmationMotion.item}
+                      >
+                        {incompleteConfirmation
+                          ? <CircleAlert size={22} aria-hidden="true" />
+                          : <Check size={22} aria-hidden="true" />}
+                      </motion.span>
+                      {incompleteConfirmation ? (
+                        <motion.h2 id="quiz-confirm-title" ref={confirmationHeadingRef} tabIndex={-1} variants={confirmationMotion.item}>
+                          {unansweredCount} question{unansweredCount === 1 ? "" : "s"} left to answer
+                        </motion.h2>
+                      ) : (
+                        <motion.h2 id="quiz-confirm-ready-title" ref={confirmationHeadingRef} tabIndex={-1} variants={confirmationMotion.item}>
+                          Ready to submit your activity?
+                        </motion.h2>
+                      )}
+                    </motion.div>
+                    {incompleteConfirmation ? (
+                      <>
+                        <motion.p id="quiz-confirm-description" className="quiz-confirm-description" variants={confirmationMotion.item}>
+                          Unanswered questions receive 0 points with no partial credit.
+                        </motion.p>
+                        <motion.section
+                          className="quiz-confirm-unanswered"
+                          aria-labelledby="quiz-confirm-unanswered-label"
+                          variants={confirmationMotion.section}
+                        >
+                          <motion.h3 id="quiz-confirm-unanswered-label" variants={confirmationMotion.item}>
+                            Unanswered questions
+                          </motion.h3>
+                          <motion.ul id="quiz-confirm-unanswered-list" variants={confirmationMotion.list}>
+                            {unansweredNumbers.map((questionNumber) => (
+                              <motion.li key={questionNumber} aria-label={`Question ${questionNumber}`} variants={confirmationMotion.item}>
+                                Q{questionNumber}
+                              </motion.li>
+                            ))}
+                          </motion.ul>
+                        </motion.section>
+                        <motion.div className="quiz-confirm-actions" variants={confirmationMotion.section}>
+                          <motion.div className="quiz-confirm-action" variants={confirmationMotion.item}>
+                            <Button
+                              type="button"
+                              size="lg"
+                              className="quiz-confirm-action-button quiz-confirm-primary"
+                              onClick={reviewUnansweredQuestions}
+                            >
+                              Review unanswered questions
+                            </Button>
+                          </motion.div>
+                          <motion.div className="quiz-confirm-action" variants={confirmationMotion.item}>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="lg"
+                              className="quiz-confirm-action-button quiz-confirm-submit-anyway"
+                              onClick={() => void handleSubmit(true)}
+                              disabled={submitting}
+                            >
+                              <span>Submit anyway</span>
+                              <span className="quiz-confirm-action-detail">(0 points for unanswered)</span>
+                            </Button>
+                          </motion.div>
+                        </motion.div>
+                      </>
+                    ) : (
+                      <>
+                        <motion.div
+                          id="quiz-confirm-ready-status"
+                          className="quiz-confirm-ready-status"
+                          variants={confirmationMotion.item}
+                        >
+                          <span>All questions answered</span>
+                          <strong>{answeredCount} / 10</strong>
+                        </motion.div>
+                        <motion.p id="quiz-confirm-ready-description" className="quiz-confirm-description" variants={confirmationMotion.item}>
+                          Submitting saves these choices with this attempt. You can change them in a retry.
+                        </motion.p>
+                        <motion.div className="quiz-confirm-actions" variants={confirmationMotion.section}>
+                          <motion.div className="quiz-confirm-action" variants={confirmationMotion.item}>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="lg"
+                              className="quiz-confirm-action-button"
+                              onClick={reviewAnswers}
+                            >
+                              Review answers
+                            </Button>
+                          </motion.div>
+                          <motion.div className="quiz-confirm-action" variants={confirmationMotion.item}>
+                            <Button
+                              type="button"
+                              size="lg"
+                              className="quiz-confirm-action-button quiz-confirm-primary"
+                              onClick={() => void handleSubmit(false, true)}
+                              disabled={submitting}
+                            >
+                              Submit activity
+                            </Button>
+                          </motion.div>
+                        </motion.div>
+                      </>
+                    )}
+                </motion.div>
+              </motion.dialog>
+            )}
+
+        {storageWarning && <p className="quiz-storage-warning" role="status">{storageWarning}</p>}
+
+        <div className="quiz-action-dock">
+          <p className="quiz-dock-status" role="status" aria-live="polite">
+            <AnimatePresence initial={false} mode="wait">
+              <motion.span
+                key={saveStatus}
+                className="quiz-dock-status-message"
+                initial={{ opacity: 0, y: prefersReducedMotion ? 0 : 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: prefersReducedMotion ? 0 : -3 }}
+                transition={{
+                  y: { type: "spring", stiffness: 440, damping: 36, mass: 0.55 },
+                  opacity: { duration: 0.16, ease: [0.16, 1, 0.3, 1] },
+                }}
+              >
+                {saveStatus}
+              </motion.span>
+            </AnimatePresence>
+          </p>
+          <div className="actions">
+              <button
+                type="button"
+                className={`quiz-save-button${saveFeedback !== "idle" ? ` is-${saveFeedback}` : ""}`}
+                aria-label={saveStatus.includes("Saving") || saveStatus.includes("Retrying") ? "Saving draft" : "Save draft"}
+                title="Save draft"
+                onClick={() => void save(true)}
+                disabled={submittedAttempt || !!conflict || submitting || !!pendingSubmission || saving.current || !dirty.current}
+              >
+                {saveFeedback === "saving"
+                  ? <LoaderCircle className="quiz-save-spinner" size={19} aria-hidden="true" />
+                  : saveFeedback === "saved"
+                    ? <Check size={19} aria-hidden="true" />
+                    : <Save size={18} aria-hidden="true" />}
+                <span className="quiz-save-label">Save draft</span>
+              </button>
+              {showFlowSubmitButton ? (
+                <FlowButton
+                  ref={submitButtonRef}
+                  phase={flowSubmitPhase}
+                  label={pendingSubmission ? "Recover submission" : "Submit activity"}
+                  loadingLabel="Evaluating..."
+                  successLabel="Activity submitted"
+                  disabled={!!conflict && !pendingSubmission}
+                  onClick={() => void handleSubmit(false)}
+                />
+              ) : (
+                <button
+                  ref={submitButtonRef}
+                  type="button"
+                  className="primary quiz-submit-button"
+                  onClick={() => void handleRetry()}
+                  disabled={retrying || submitting || completing || saving.current || !!conflict}
+                >
+                  {retrying
+                    ? <LoaderCircle className="quiz-save-spinner" size={18} aria-hidden="true" />
+                    : <RotateCcw size={18} aria-hidden="true" />}
+                  {retrying ? "Starting retry…" : "Retry"}
+                </button>
+              )}
+          </div>
+        </div>
+          </section>
         </div>
       </main>
     </div>

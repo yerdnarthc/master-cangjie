@@ -383,7 +383,7 @@ These rules apply wherever the corresponding behavior occurs, even when a use ca
 3. Preserve answer selections and the resume location, identifying unsynced work.
 4. Let the learner review and proceed to UC-13.
 
-**Alternatives and failures:** Learners may leave questions unanswered. Offline selections follow UC-16; conflicting selections follow UC-17. Editing after a finalized submission belongs to a new attempt and does not modify the recorded answers or score of the earlier attempt.
+**Alternatives and failures:** Learners may leave questions unanswered. Offline selections follow UC-16; conflicting selections follow UC-17. After a finalized submission, its answers and feedback are read-only. Selecting Retry through UC-15 starts a separate empty attempt and does not modify the earlier submission.
 
 **Successful outcome:** An editable answer draft exists for the learner's activity attempt.
 
@@ -402,13 +402,13 @@ These rules apply wherever the corresponding behavior occurs, even when a use ca
 
 **Main flow**
 
-1. Show the ten current selections for review and identify unanswered questions.
-2. Obtain confirmation, explaining that unanswered questions earn zero.
+1. Show the ten current selections and identify unanswered questions.
+2. Before every submission, offer a final confirmation with a way to return to the editable answers. If questions are unanswered, explain that they earn zero.
 3. Evaluate the submitted selections: ten points per correct answer and zero per incorrect or unanswered question.
-4. Record per-question results and the finalized activity/topic attempt score out of 100, comparing it with the retained best score.
+4. Record per-question results and the finalized activity/topic attempt score out of 100, comparing it with the retained best score. After evaluation is confirmed, show the submitted choice, correct choice, correctness, and explanation for each question. The submitted attempt is read-only afterward.
 5. If the learner has earned at least 60/100, offer UC-14. Do not newly unlock the next topic merely because this submission passed.
 
-**Alternatives and failures:** Cancellation leaves selections editable. Unanswered questions are allowed after confirmation. A failed evaluation does not finalize an assumed result. A lower retry does not reduce best score or undo earlier completion, unlocks, or eligibility to mark complete.
+**Alternatives and failures:** Choosing to review or cancelling leaves selections editable. Unanswered questions are allowed after explicit confirmation. If an answer-draft conflict is open, reject submission and preserve both versions until the learner resolves it; do not finalize an attempt that can no longer be recovered. A failed evaluation does not finalize an assumed result. A lower retry does not reduce best score or undo earlier completion, unlocks, or eligibility to mark complete.
 
 **Successful outcome:** Submitted selections and a confirmed score are recorded; the learner knows whether marking complete is available.
 
@@ -417,6 +417,10 @@ These rules apply wherever the corresponding behavior occurs, even when a use ca
 - **UC-13-AC1:** Six correct answers yield 60/100 and pass; five yield 50/100 and fail. Incorrect and unanswered questions earn zero, with no partial credit.
 - **UC-13-AC2:** A first passing submission does not unlock the next topic before UC-14.
 - **UC-13-AC3:** Recorded submitted answers remain unchanged by later edits, and repeated clicks do not finalize duplicate attempts.
+- **UC-13-AC4:** Reveal each correct choice and its explanation only after a confirmed evaluation; pre-submit quiz content does not include the answer key.
+- **UC-13-AC5:** A fully answered activity shows a final confirmation before evaluation and lets the learner return to the answers without submitting.
+- **UC-13-AC6:** A submitted attempt cannot be submitted again with a new request identity; a voluntary repeat requires UC-15 Retry to start a separate empty attempt.
+- **UC-13-AC7:** A submission request with an unresolved answer-draft conflict is rejected without creating a finalized submission or changing score/progress; the conflict remains available for resolution and a later submission.
 
 **Source:** Product → Multiple-choice scoring, Passing a topic, Final submission, Progress after retry.
 
@@ -451,10 +455,11 @@ These rules apply wherever the corresponding behavior occurs, even when a use ca
 
 **Main flow**
 
-1. Show existing best results and allow an editable current attempt.
+1. Show existing best results and the current attempt. If the current multiple-choice attempt is submitted, keep its answers and feedback read-only until the learner selects Retry.
 2. For coding, use UC-07 through UC-11 as applicable; for multiple choice, use UC-12 and UC-13.
-3. Record the new finalized outcome without rewriting earlier submissions.
-4. Increase the best score only if the new finalized score is higher. Preserve completion and unlocks in all cases.
+3. For multiple choice, Retry creates an empty answering attempt with ten unanswered questions. It does not submit, evaluate, or assign a score. Present it as current only after the server confirms the transition.
+4. Record the new finalized outcome without rewriting earlier submissions.
+5. Increase the best score only if the new finalized score is higher. Preserve completion and unlocks in all cases.
 
 **Alternatives and failures:** An unfinalized attempt does not replace a finalized topic score. Manual batch-validation retries respect UC-09's cooldown. A failed retry cannot remove previously earned eligibility for UC-14 or require a completed topic to be marked complete again.
 
@@ -466,6 +471,9 @@ These rules apply wherever the corresponding behavior occurs, even when a use ca
 - **UC-15-AC2:** A later 90% replaces the retained 80% best score without losing history or previously unlocked access.
 - **UC-15-AC3:** A failed coding or multiple-choice retry does not reduce completed-topic or solved-problem achievements.
 - **UC-15-AC4:** If corrected content changes possible points, compare finalized percentages and preserve the original points: 80/100 remains the best after a 90/150 retry. Equal percentages retain the earlier best result.
+- **UC-15-AC5:** After a confirmed multiple-choice submission, Retry starts an empty, unsubmitted answer sheet (0/10 answered) and clears current-result feedback while retaining all finalized submissions and the best-score reference.
+- **UC-15-AC6:** A retained passing submission remains eligible for Mark complete during an unanswered retry; a completed topic stays complete and unlocked without another completion action.
+- **UC-15-AC7:** Replaying a confirmed Retry transition does not create another attempt or erase answers entered after the first transition.
 
 **Source:** Product → Topic selection, Progress after retry, Learner statistics.
 
@@ -476,11 +484,12 @@ These rules apply wherever the corresponding behavior occurs, even when a use ca
 
 **Main flow**
 
-1. Recover confirmed scores, achievements, topic status, and the saved learning location.
-2. Restore the corresponding code draft or multiple-choice answer selections.
+1. Recover confirmed scores, achievements, topic status, the active attempt identity, and the saved learning location.
+2. Restore the corresponding code draft or multiple-choice answer selections. A newly created retry restores as an empty unanswered answer sheet, without feedback from an earlier submission.
 3. Identify offline or unsynced edits and sync them when connectivity returns, subject to UC-17 if there is a conflict.
 4. Restore confirmed evaluation results with their correct code or submitted-answer context; keep changed drafts labeled unvalidated.
-5. Let the learner continue editing or retry an evaluation whose outcome remains unconfirmed.
+5. If a submission outcome is uncertain, recover that same submission and its frozen answers before allowing a new Retry. A Retry whose response is uncertain is recovered by repeating its transition identity and then loading the authoritative current attempt.
+6. Let the learner continue editing or retry an evaluation whose outcome remains unconfirmed.
 
 **Alternatives and failures:** If connectivity remains unavailable, preserve drafts and show their unsynced status without inventing results. If evaluation completed before the interruption, recover its confirmed outcome rather than duplicate submission. If its outcome cannot yet be confirmed, show that uncertainty and do not replace prior progress with zero.
 
@@ -491,6 +500,8 @@ These rules apply wherever the corresponding behavior occurs, even when a use ca
 - **UC-16-AC1:** Saved code and answer selections survive leaving and signing out; saved scores and unlocks do not reset.
 - **UC-16-AC2:** Offline edits are not described as synced until they are confirmed saved, and conflicting work is not silently overwritten.
 - **UC-16-AC3:** Unconfirmed evaluations produce no assumed score or completion; restored results do not validate a different draft.
+- **UC-16-AC4:** Returning to an unanswered retry restores that attempt, not the latest historical submission's answer feedback.
+- **UC-16-AC5:** A lost submission response recovers the same finalized submission; it never silently creates an empty retry.
 
 **Source:** Product → Resume learning, Final submission; interruption and service-failure edge cases.
 
@@ -506,7 +517,7 @@ These rules apply wherever the corresponding behavior occurs, even when a use ca
 3. Make the chosen draft current and clearly report the resolution.
 4. Apply the normal validation or submission requirements to the chosen work.
 
-**Alternatives and failures:** If the learner postpones the choice, preserve both drafts and keep the conflict visible. Existing submitted attempts, best scores, completion, and unlocks remain intact regardless of the chosen draft.
+**Alternatives and failures:** If the learner postpones the choice, preserve both drafts and keep the conflict visible. Associate answer conflicts with their originating attempt; resolving or replaying an old conflict cannot write into a newer retry. Existing submitted attempts, best scores, completion, and unlocks remain intact regardless of the chosen draft.
 
 **Successful outcome:** One current draft is chosen without silent loss or mismatched results.
 
@@ -515,6 +526,7 @@ These rules apply wherever the corresponding behavior occurs, even when a use ca
 - **UC-17-AC1:** Neither conflicting draft is silently discarded before a choice is made.
 - **UC-17-AC2:** Choosing unvalidated code does not inherit a passing result from a different code version.
 - **UC-17-AC3:** Resolving answer selections changes only the current draft, not an earlier submitted answer record.
+- **UC-17-AC4:** A save or conflict-resolution request from an obsolete quiz attempt cannot change the active retry's answer sheet.
 
 **Source:** Product → Conflicting drafts edge case; current-work evaluation rules.
 
