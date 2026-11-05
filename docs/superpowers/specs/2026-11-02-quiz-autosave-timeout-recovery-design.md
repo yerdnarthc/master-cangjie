@@ -29,7 +29,7 @@ Today, answer edits are written to IndexedDB and autosaved after a 1.5-second de
 - UC-12-AC2: changed answer selections must be recoverable on return.
 - UC-16-AC2: offline edits remain unsynced until confirmed and conflicting work is not silently overwritten.
 - INV-22: preserve conflicting drafts until learner choice.
-- Keep the current 1.5-second debounce and 15-second request timeout; test code controls time instead of depending on debugger speed.
+- Keep the current 1.5-second debounce and 15-second request timeout. Tests control time for deterministic retry and held-response scenarios; the stalled-autosave submission-recovery journey uses real timers because its 10-second preparation deadline is installed after asynchronous IndexedDB work.
 - Learner-facing status and recovery copy follows `docs/content-style.md`.
 
 ## Approaches
@@ -55,7 +55,7 @@ Retry policy defaults (implementation choice): three retries after the initial a
 ## Validation boundary
 
 - Browser journeys cover edits made during a held save, transient failure and bounded retry, retry after reconnection, exhausted retries with manual recovery, reload with a pending request plus newer local edits, and conflict/auth failures that stop retries.
-- Existing held-response tests use Playwright-controlled time and immutable response fixtures so Step over duration cannot reorder their intended scenario.
+- Existing held-response tests use Playwright-controlled time and immutable response fixtures so Step over duration cannot reorder their intended scenario. The stalled-autosave submission-recovery journey is the exception: it uses real timers, waits for the intercepted first save, and allows up to 22 seconds for both the preparation recovery state and the 15-second save timeout.
 - A browser journey against the dedicated `_test` PostgreSQL database lets the server commit a save and drops the first response. The client then replays the identical request; verify the server's current answers and revision, no duplicate conflict, preservation of newer answers, and the saved/unsynced status.
 - Storage failure must never produce a saved status. The app may still attempt a live server save, but it must report that browser recovery could not be guaranteed.
 

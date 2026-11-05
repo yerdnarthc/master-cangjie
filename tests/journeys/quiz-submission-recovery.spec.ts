@@ -831,23 +831,18 @@ test("a stalled earlier autosave eventually releases submission recovery", async
     return route.fulfill({ json: confirmedResult });
   });
   try {
-    await page.clock.install({ time: quizClockStart });
     await openMockActivity(page);
     await expect(page.locator('#q-q0 [role="radio"]').nth(1)).toBeVisible();
-    await page.clock.pauseAt(quizClockPaused);
     await page.locator('#q-q0 [role="radio"]').nth(1).click();
-    await page.clock.fastForward(1500);
     await expect.poll(() => drafts).toBe(1);
     await page.getByRole("button", { name: "Submit activity" }).click();
     await page.getByRole("dialog").getByRole("button", { name: "Submit activity" }).click();
-    await page.clock.fastForward(10000);
     await expect(
       page.getByRole("button", { name: "Recover submission" }),
-    ).toBeVisible({ timeout: 15000 });
-    await page.clock.fastForward(5000);
+    ).toBeVisible({ timeout: 22000 });
     await expect(
       page.getByText("Draft save timed out. Try again."),
-    ).toBeVisible();
+    ).toBeVisible({ timeout: 22000 });
     await expect(
       page.getByText("signal is aborted without reason"),
     ).toHaveCount(0);
